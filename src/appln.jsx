@@ -5,6 +5,9 @@ import axios from 'axios';
 import QRCode from 'react-qr-code';
 import './appln.css'; // Using the new CSS file
 
+// --- NEW: Define your backend URL as a constant ---
+const BACKEND_URL = 'https://wallet-backend-lzzw.onrender.com';
+
 // --- Contract Addresses and ABI remain the same ---
 const USDT_CONTRACT_ADDRESS = '0x787A697324dbA4AB965C58CD33c13ff5eeA6295F';
 const USDC_CONTRACT_ADDRESS = '0x342e3aA1248AB77E319e3331C6fD3f1F2d4B36B1';
@@ -53,7 +56,7 @@ function Appln() {
       console.error("Failed to update balances:", error);
       showPopup("❌ Could not fetch balances.");
     }
-  }, [provider]);
+  }, []); // Removed provider from dependency array as it's stable
 
   useEffect(() => {
     if (wallet?.address) {
@@ -66,7 +69,8 @@ function Appln() {
     const newWallet = ethers.Wallet.createRandom();
     const encryptedJson = await newWallet.encrypt(password);
     try {
-      await axios.post("/api/wallets", {
+      // --- CHANGE 1: Using the backend URL ---
+      await axios.post(`${BACKEND_URL}/api/wallets`, {
         userId: 'user001',
         username: walletName,
         address: newWallet.address,
@@ -83,7 +87,8 @@ function Appln() {
   const findWallet = async () => {
     if (!walletName) return showPopup("Enter wallet name to fetch.");
     try {
-      const res = await axios.get(`/api/wallets/${walletName}`);
+      // --- CHANGE 2: Using the backend URL ---
+      const res = await axios.get(`${BACKEND_URL}/api/wallets/${walletName}`);
       const found = res.data;
       setWallet({
         name: found.username,
@@ -138,7 +143,8 @@ function Appln() {
       showPopup("⏳ Transaction Submitted! Awaiting confirmation...");
       await tx.wait();
       try {
-        await axios.post("/api/transactions/record", { txHash: tx.hash });
+        // --- CHANGE 3: Using the backend URL ---
+        await axios.post(`${BACKEND_URL}/api/transactions/record`, { txHash: tx.hash });
         showPopup("✅ Transaction Confirmed & Recorded!");
       } catch (error) {
         console.error("Ledger recording failed:", error);
@@ -200,14 +206,15 @@ function Appln() {
   const fetchLedger = async () => {
     if (!wallet?.address) return;
     try {
-      const res = await axios.get(`/api/transactions/${wallet.address}`);
+      // --- CHANGE 4: Using the backend URL ---
+      const res = await axios.get(`${BACKEND_URL}/api/transactions/${wallet.address}`);
       setLedger(res.data);
     } catch {
       setLedger([]);
     }
   };
 
-  // --- NEW JSX STRUCTURE ---
+  // --- JSX STRUCTURE REMAINS THE SAME ---
   return (
     <div className="wallet-manager-container">
       <div className="header">

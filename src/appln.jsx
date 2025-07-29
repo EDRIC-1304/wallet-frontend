@@ -19,6 +19,8 @@ function Appln() {
   const [password, setPassword] = useState('');
   const [wallet, setWallet] = useState(null);
   const [privateKey, setPrivateKey] = useState('');
+  // --- NEW: State for revealing mnemonic ---
+  const [mnemonic, setMnemonic] = useState('');
   const [amount, setAmount] = useState('');
   const [recipientAddress, setRecipientAddress] = useState('');
   const [selectedToken, setSelectedToken] = useState('BNB');
@@ -61,6 +63,9 @@ function Appln() {
   useEffect(() => {
     if (wallet?.address) {
       updateBalances(wallet.address);
+      // Clear sensitive info on new wallet load
+      setPrivateKey('');
+      setMnemonic('');
     }
   }, [wallet, updateBalances]);
 
@@ -108,6 +113,19 @@ function Appln() {
     try {
       const dec = await ethers.Wallet.fromEncryptedJson(wallet.encryptedJson, password);
       setPrivateKey(dec.privateKey);
+    } catch {
+      showPopup("❌ Wrong password.");
+    }
+  };
+  
+  // --- NEW: Function to reveal the mnemonic phrase securely ---
+  const revealMnemonic = async () => {
+    if (!wallet || !password) return showPopup("Enter password to reveal mnemonic.");
+    try {
+      // Verify password by attempting decryption, but don't need the result
+      await ethers.Wallet.fromEncryptedJson(wallet.encryptedJson, password);
+      // If decryption is successful, the password is correct. Now reveal mnemonic.
+      setMnemonic(wallet.mnemonic.phrase);
     } catch {
       showPopup("❌ Wrong password.");
     }
@@ -233,6 +251,14 @@ function Appln() {
                 onChange={(e) => setWalletName(e.target.value)}
                 className="wallet-input"
               />
+              {/* --- FIX 1: Password input moved here and is always visible --- */}
+              <input
+                  type="password"
+                  placeholder="Enter Password for Wallet"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="wallet-input"
+              />
               <div className="button-row">
                 <button className="btn btn-primary" onClick={generateWallet}>Create</button>
                 <button className="btn btn-secondary" onClick={findWallet}>Fetch</button>
@@ -281,17 +307,14 @@ function Appln() {
                   <p><strong>USDT:</strong> {parseFloat(usdt).toFixed(2)}</p>
                   <p><strong>USDC:</strong> {parseFloat(usdc).toFixed(2)}</p>
                 </div>
-                <div className="input-group">
-                  <input
-                    type="password"
-                    placeholder="Enter Password for Actions"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="wallet-input"
-                  />
-                  <button className="btn btn-secondary btn-full" onClick={revealPrivateKey}>Reveal Private Key</button>
+                {/* --- FIX 2: Added buttons and display for Mnemonic and Private Key --- */}
+                <div className="button-row">
+                    <button className="btn btn-secondary btn-full" onClick={revealMnemonic}>Reveal Mnemonic</button>
+                    <button className="btn btn-secondary btn-full" onClick={revealPrivateKey}>Reveal Private Key</button>
                 </div>
+                {mnemonic && <p className="private-key"><strong>Mnemonic:</strong> {mnemonic}</p>}
                 {privateKey && <p className="private-key"><strong>PK:</strong> {privateKey}</p>}
+
                 <div className="view-buttons">
                   <button className={`btn-view ${view === 'send' ? 'active' : ''}`} onClick={() => setView('send')}>Send</button>
                   <button className={`btn-view ${view === 'receive' ? 'active' : ''}`} onClick={() => setView('receive')}>Receive</button>

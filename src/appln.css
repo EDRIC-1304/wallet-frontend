@@ -244,3 +244,51 @@ body {
     text-align: center;
     color: #03dac6;
 }
+
+/* --- Shareable Link Container --- */
+.shareable-link-container {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #2d2d2d;
+}
+.shareable-link-container p {
+    margin: 0 0 10px 0;
+}
+.shareable-link-container input {
+    width: 100%;
+    background-color: #1a1a1a;
+    color: #aaa;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    margin-bottom: 10px;
+    box-sizing: border-box;
+}
+.shareable-link-container button {
+    width: 100%;
+    padding: 8px;
+    background-color: #333;
+    color: #fff;
+    border: 1px solid #555;
+    cursor: pointer;
+}
+
+/* --- Agreement Preview on Auth Page --- */
+.agreement-preview {
+    margin-top: 24px;
+    padding: 16px;
+    border: 1px dashed #444;
+    border-radius: 8px;
+    background-color: rgba(3, 218, 198, 0.05);
+}
+
+.agreement-preview h4 {
+    margin: 0 0 8px 0;
+    color: #03dac6;
+}
+
+.agreement-preview p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #aaa;
+}

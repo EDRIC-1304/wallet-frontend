@@ -121,7 +121,6 @@ function Appln() {
     // --- Effect to check for existing session and URL params on page load ---
     useEffect(() => {
         const initializeApp = async () => {
-            // 1. Check for agreement data in URL first
             const urlParams = new URLSearchParams(window.location.search);
             const agreementData = urlParams.get('agreement');
             if (agreementData) {
@@ -135,7 +134,6 @@ function Appln() {
                 }
             }
 
-            // 2. Check for an existing user session
             const session = getSession();
             if (session?.address && typeof window.ethereum !== "undefined") {
                 setIsLoading(true);
@@ -171,6 +169,7 @@ function Appln() {
 
     // --- Escrow Core Functions ---
     const createAgreement = () => {
+        if (!account) return setUiMessage("Please connect your wallet first.");
         const { arbiter, beneficiary, amount, token } = formState;
         if (!ethers.isAddress(arbiter) || !ethers.isAddress(beneficiary) || !amount) {
             setUiMessage("Please fill all fields with valid addresses and an amount.");
@@ -212,15 +211,19 @@ function Appln() {
                 const tx = await tokenContract.transfer(toAddress, value);
                 setUiMessage(`Transaction sent (${tx.hash}). Waiting for confirmation...`);
                 await tx.wait();
+                
+                // **IMPROVEMENT**: Create an updated agreement object for state and link generation
                 const updatedAgreement = { ...agreement, status: 'Funded' };
                 setAgreements(agreements.map(a => a.id === agreementId ? updatedAgreement : a));
                 generateShareableLink(updatedAgreement); // Re-generate link with updated status
-                setUiMessage(`Transaction confirmed! Agreement is now Funded. The link has been updated.`);
+                setUiMessage(`Transaction confirmed! Agreement is now Funded. The link has been updated with the new status.`);
+
             } else if (action === "Release") {
+                // **IMPROVEMENT**: Same pattern for releasing
                 const updatedAgreement = { ...agreement, status: 'Released' };
                 setAgreements(agreements.map(a => a.id === agreementId ? updatedAgreement : a));
                 generateShareableLink(updatedAgreement); // Re-generate link with updated status
-                setUiMessage(`Arbiter has approved the release. The link has been updated.`);
+                setUiMessage(`Arbiter has approved the release. The link has been updated with the final status.`);
             }
         } catch (error) {
             const userFriendlyError = error.reason || error.message;
@@ -233,7 +236,6 @@ function Appln() {
 
     // --- RENDER LOGIC ---
 
-    // AUTHENTICATION PAGE
     if (!isConnected) {
         return (
             <div className="auth-container">
@@ -244,7 +246,6 @@ function Appln() {
                         {isLoading ? "Connecting..." : "Connect Wallet"}
                     </button>
                     {uiMessage && <p className="ui-message">{uiMessage}</p>}
-                    {/* Show loaded agreement even when not connected */}
                     {agreements.length > 0 && (
                         <div className="agreement-preview">
                             <h4>Agreement Loaded:</h4>
@@ -256,7 +257,6 @@ function Appln() {
         );
     }
 
-    // MAIN APPLICATION PAGE
     return (
         <div className="main-container">
             <header className="main-header">

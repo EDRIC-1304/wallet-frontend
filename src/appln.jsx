@@ -5,7 +5,7 @@ import './appln.css';
 import EscrowJson from './Escrow.json';
 
 // --- Constants ---
-const API_BASE_URL = 'https://wallet-backend-kwhe.onrender.com'; // Or your deployed backend URL
+const API_BASE_URL = 'https://wallet-backend-kwhe.onrender.com/api'; // Or your deployed backend URL
 const USDT_CONTRACT_ADDRESS = '0x787A697324dbA4AB965C58CD33c13ff5eeA6295F'; // BNB Testnet USDT
 const USDC_CONTRACT_ADDRESS = '0x342e3aA1248AB77E319e3331C6fD3f1F2d4B36B1'; // BNB Testnet USDC
 const TOKEN_ABI = [

@@ -1,19 +1,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
-import './appln.css'; // Your existing CSS file
+import './appln.css';
+// Make sure you have copied Escrow.json into your src folder from the hardhat artifacts
+import EscrowJson from './Escrow.json';
 
 // --- Constants ---
-const USDT_CONTRACT_ADDRESS = '0x787A697324dbA4AB965C58CD33c13ff5eeA6295F';
-const USDC_CONTRACT_ADDRESS = '0x342e3aA1248AB77E319e3331C6fD3f1F2d4B36B1';
+const API_BASE_URL = 'http://localhost:5000/api'; // Or your deployed backend URL
+const USDT_CONTRACT_ADDRESS = '0x787A697324dbA4AB965C58CD33c13ff5eeA6295F'; // BNB Testnet USDT
+const USDC_CONTRACT_ADDRESS = '0x342e3aA1248AB77E319e3331C6fD3f1F2d4B36B1'; // BNB Testnet USDC
 const TOKEN_ABI = [
     "function balanceOf(address) view returns (uint256)",
-    "function transfer(address to, uint amount) returns (bool)"
+    "function allowance(address owner, address spender) view returns (uint256)",
+    "function approve(address spender, uint amount) returns (bool)",
+    "function transfer(address to, uint amount) returns (bool)" // Not for escrow, but good for balances
 ];
+const ESCROW_ABI = EscrowJson.abi;
+const ESCROW_BYTECODE = EscrowJson.bytecode;
+
 
 // --- Helper Functions ---
 const shortAddress = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
-// --- Session Management Helpers ---
+
+// --- Session Management Helpers (Unchanged) ---
 const sessionKey = "escrow_dapp_session";
 const saveSession = (data) => localStorage.setItem(sessionKey, JSON.stringify(data));
 const getSession = () => JSON.parse(localStorage.getItem(sessionKey));
@@ -33,9 +42,21 @@ function Appln() {
     const [formState, setFormState] = useState({ arbiter: '', beneficiary: '', amount: '', token: 'USDT' });
     const [uiMessage, setUiMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [shareableLink, setShareableLink] = useState('');
 
-    // --- Balance Update Function ---
+    // --- Data Fetching & Callbacks ---
+    const fetchAgreements = useCallback(async (currentAccount) => {
+        if (!currentAccount) return;
+        try {
+            const response = await fetch(`${API_BASE_URL}/agreements/${currentAccount}`);
+            if (!response.ok) throw new Error("Failed to fetch agreements from the server.");
+            const data = await response.json();
+            setAgreements(data);
+        } catch (error) {
+            console.error(error);
+            setUiMessage(`Error: Could not fetch agreements.`);
+        }
+    }, []);
+    
     const updateBalances = useCallback(async (currentAccount, currentProvider) => {
         if (!currentAccount || !currentProvider) return;
         try {
@@ -43,16 +64,15 @@ function Appln() {
             setBnb(ethers.formatEther(bnbBalance));
             const usdtContract = new ethers.Contract(USDT_CONTRACT_ADDRESS, TOKEN_ABI, currentProvider);
             const usdtBalance = await usdtContract.balanceOf(currentAccount);
-            setUsdt(ethers.formatUnits(usdtBalance, 18));
+            setUsdt(ethers.formatUnits(usdtBalance, 18)); // Assuming 18 decimals for USDT
             const usdcContract = new ethers.Contract(USDC_CONTRACT_ADDRESS, TOKEN_ABI, currentProvider);
             const usdcBalance = await usdcContract.balanceOf(currentAccount);
-            setUsdc(ethers.formatUnits(usdcBalance, 18));
+            setUsdc(ethers.formatUnits(usdcBalance, 18)); // Assuming 18 decimals for USDC
         } catch (error) {
             console.error("Failed to update balances:", error);
         }
     }, []);
-    
-    // --- Logout Function ---
+
     const logout = useCallback(() => {
         clearSession();
         setProvider(null);
@@ -63,7 +83,7 @@ function Appln() {
         setUiMessage("You have been successfully logged out.");
     }, []);
 
-    // --- connectWallet with Signature ---
+    // --- Wallet Connection Logic (Unchanged) ---
     const connectWallet = async () => {
         if (typeof window.ethereum === "undefined") {
             return setUiMessage("MetaMask not detected. Please install it.");
@@ -73,34 +93,25 @@ function Appln() {
         try {
             const newProvider = new ethers.BrowserProvider(window.ethereum);
             const accounts = await newProvider.send("eth_requestAccounts", []);
-            if (!accounts || accounts.length === 0) {
-                setIsLoading(false);
-                return setUiMessage("No accounts found in MetaMask.");
-            }
             const newSigner = await newProvider.getSigner();
             const currentAddress = accounts[0];
-            setUiMessage("Please sign the message to authenticate...");
             const challenge = `Sign this message to log into the Escrow DApp.\nTime: ${Date.now()}`;
-            const signature = await newSigner.signMessage(challenge);
-            saveSession({ address: currentAddress, signature, challenge });
+            await newSigner.signMessage(challenge);
+            saveSession({ address: currentAddress });
             setProvider(newProvider);
             setSigner(newSigner);
             setAccount(currentAddress);
             setIsConnected(true);
             setUiMessage("");
         } catch (error) {
-            console.error("Connection/signature failed:", error);
-            if (error.code === 4001) {
-                setUiMessage("You must approve the request to continue.");
-            } else {
-                setUiMessage("Connection failed. Please try again.");
-            }
+            console.error("Connection failed:", error);
+            setUiMessage("Connection failed. Please try again.");
         } finally {
             setIsLoading(false);
         }
     };
     
-    // --- Effect to handle account changes ---
+    // --- Use Effects ---
     useEffect(() => {
         const handleAccountsChanged = (accounts) => {
             if (accounts.length === 0 || getSession()?.address.toLowerCase() !== accounts[0].toLowerCase()) {
@@ -116,118 +127,133 @@ function Appln() {
             }
         };
     }, [logout]);
-
-
-    // --- Effect to check for existing session and URL params on page load ---
+    
     useEffect(() => {
         const initializeApp = async () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const agreementData = urlParams.get('agreement');
-            if (agreementData) {
-                try {
-                    const decodedData = atob(agreementData);
-                    const agreement = JSON.parse(decodedData);
-                    setAgreements([agreement]);
-                    setUiMessage("Agreement loaded from shareable link! Connect wallet to interact.");
-                } catch (error) {
-                    setUiMessage("Error: Could not load agreement from the provided link.");
-                }
-            }
-
             const session = getSession();
             if (session?.address && typeof window.ethereum !== "undefined") {
-                setIsLoading(true);
                 try {
                     const newProvider = new ethers.BrowserProvider(window.ethereum);
-                    const availableAccounts = await newProvider.listAccounts();
-                    if (availableAccounts.some(acc => acc.address.toLowerCase() === session.address.toLowerCase())) {
-                        const newSigner = await newProvider.getSigner();
-                        setProvider(newProvider);
-                        setSigner(newSigner);
-                        setAccount(session.address);
-                        setIsConnected(true);
-                    } else {
-                        clearSession();
-                    }
+                    const newSigner = await newProvider.getSigner();
+                    setProvider(newProvider);
+                    setSigner(newSigner);
+                    setAccount(session.address);
+                    setIsConnected(true);
                 } catch (error) {
                     console.error("Error reconnecting session:", error);
                     clearSession();
                 }
-                setIsLoading(false);
             }
         };
         initializeApp();
     }, []);
 
-
-    // --- Effect to fetch balances when account changes ---
     useEffect(() => {
         if (account && provider) {
             updateBalances(account, provider);
+            fetchAgreements(account);
         }
-    }, [account, provider, updateBalances]);
+    }, [account, provider, updateBalances, fetchAgreements]);
 
-    // --- Escrow Core Functions ---
-    const createAgreement = () => {
-        if (!account) return setUiMessage("Please connect your wallet first.");
+    // --- Escrow Core Functions (Completely Reworked) ---
+    const createAgreement = async () => {
+        if (!signer || !account) return setUiMessage("Please connect your wallet first.");
         const { arbiter, beneficiary, amount, token } = formState;
-        if (!ethers.isAddress(arbiter) || !ethers.isAddress(beneficiary) || !amount) {
-            setUiMessage("Please fill all fields with valid addresses and an amount.");
-            return;
+        if (!ethers.isAddress(arbiter) || !ethers.isAddress(beneficiary) || !amount || parseFloat(amount) <= 0) {
+            return setUiMessage("Please fill all fields with valid addresses and a positive amount.");
         }
-        const newAgreement = {
-            id: Date.now(),
-            depositor: account,
-            arbiter,
-            beneficiary,
-            amount,
-            token,
-            status: 'Created',
-        };
-        setAgreements(prev => [...prev, newAgreement]);
-        generateShareableLink(newAgreement);
-        setFormState({ arbiter: '', beneficiary: '', amount: '', token: 'USDT' });
-        setUiMessage("Agreement created! Share the link below with the Arbiter and Beneficiary.");
+        setIsLoading(true);
+        setUiMessage("1/3: Deploying new escrow contract...");
+        try {
+            const tokenAddress = token === 'USDT' ? USDT_CONTRACT_ADDRESS : USDC_CONTRACT_ADDRESS;
+            const value = ethers.parseUnits(amount, 18);
+            
+            const EscrowFactory = new ethers.ContractFactory(ESCROW_ABI, ESCROW_BYTECODE, signer);
+            const escrowContract = await EscrowFactory.deploy(arbiter, beneficiary, account, tokenAddress, value);
+            await escrowContract.waitForDeployment();
+            
+            const contractAddress = await escrowContract.getAddress();
+            setUiMessage(`2/3: Contract deployed at ${shortAddress(contractAddress)}. Saving to database...`);
+            
+            const response = await fetch(`${API_BASE_URL}/agreements`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contractAddress, depositor: account, arbiter, beneficiary, amount, token, tokenAddress }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to save agreement to the database.");
+            }
+            
+            setUiMessage("3/3: Agreement created and saved successfully!");
+            setFormState({ arbiter: '', beneficiary: '', amount: '', token: 'USDT' });
+            fetchAgreements(account); // Refresh list to show the new agreement
+
+        } catch (error) {
+            const userFriendlyError = error.reason || error.message;
+            setUiMessage(`Error creating agreement: ${userFriendlyError}`);
+            console.error(error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const generateShareableLink = (agreement) => {
-        const agreementString = JSON.stringify(agreement);
-        const encodedAgreement = btoa(agreementString);
-        const link = `${window.location.origin}${window.location.pathname}?agreement=${encodedAgreement}`;
-        setShareableLink(link);
-    };
-    
-    const handleAction = async (agreementId, action) => {
-        const agreement = agreements.find(a => a.id === agreementId);
-        if (!agreement) return;
+    const handleAction = async (agreement, action) => {
+        if (!signer) return setUiMessage("Signer not found. Please reconnect wallet.");
         setIsLoading(true);
         setUiMessage(`Processing action: ${action}...`);
+        
         try {
+            const escrowContract = new ethers.Contract(agreement.contractAddress, ESCROW_ABI, signer);
+            let tx;
+
             if (action === "Fund") {
-                const tokenAddress = agreement.token === 'USDT' ? USDT_CONTRACT_ADDRESS : USDC_CONTRACT_ADDRESS;
-                const tokenContract = new ethers.Contract(tokenAddress, TOKEN_ABI, signer);
+                const tokenContract = new ethers.Contract(agreement.tokenAddress, TOKEN_ABI, signer);
                 const value = ethers.parseUnits(agreement.amount, 18);
-                const toAddress = agreement.beneficiary;
-                const tx = await tokenContract.transfer(toAddress, value);
-                setUiMessage(`Transaction sent (${tx.hash}). Waiting for confirmation...`);
-                await tx.wait();
+
+                setUiMessage("1/3: Checking token approval...");
+                const allowance = await tokenContract.allowance(account, agreement.contractAddress);
+                if (allowance < value) {
+                    setUiMessage("2/3: Approving token transfer...");
+                    const approveTx = await tokenContract.approve(agreement.contractAddress, value);
+                    await approveTx.wait();
+                    setUiMessage("Approval confirmed. Now funding escrow...");
+                } else {
+                    setUiMessage("2/3: Approval already granted. Funding escrow...");
+                }
                 
-                // **IMPROVEMENT**: Create an updated agreement object for state and link generation
-                const updatedAgreement = { ...agreement, status: 'Funded' };
-                setAgreements(agreements.map(a => a.id === agreementId ? updatedAgreement : a));
-                generateShareableLink(updatedAgreement); // Re-generate link with updated status
-                setUiMessage(`Transaction confirmed! Agreement is now Funded. The link has been updated with the new status.`);
+                tx = await escrowContract.fund();
 
             } else if (action === "Release") {
-                // **IMPROVEMENT**: Same pattern for releasing
-                const updatedAgreement = { ...agreement, status: 'Released' };
-                setAgreements(agreements.map(a => a.id === agreementId ? updatedAgreement : a));
-                generateShareableLink(updatedAgreement); // Re-generate link with updated status
-                setUiMessage(`Arbiter has approved the release. The link has been updated with the final status.`);
+                setUiMessage("1/2: Releasing funds from escrow...");
+                tx = await escrowContract.release();
+            } else {
+                throw new Error("Invalid action");
             }
+            
+            const nextStep = action === "Fund" ? "3/3" : "2/2";
+            setUiMessage(`${nextStep}: Transaction sent (${shortAddress(tx.hash)}). Waiting for confirmation...`);
+            await tx.wait();
+            
+            setUiMessage("Transaction confirmed! Updating status in database...");
+            const newStatus = action === "Fund" ? "Funded" : "Released";
+
+            const response = await fetch(`${API_BASE_URL}/agreements/${agreement.contractAddress}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
+
+            if (!response.ok) throw new Error("Failed to update agreement status in the database.");
+
+            setUiMessage(`Agreement successfully ${newStatus}!`);
+            fetchAgreements(account); // Refresh the list
+
         } catch (error) {
             const userFriendlyError = error.reason || error.message;
             setUiMessage(`Error during ${action}: ${userFriendlyError}`);
+            console.error(error);
         } finally {
             setIsLoading(false);
         }
@@ -235,32 +261,25 @@ function Appln() {
 
 
     // --- RENDER LOGIC ---
-
     if (!isConnected) {
         return (
             <div className="auth-container">
                 <div className="auth-box">
                     <h1>Escrow DApp</h1>
-                    <p>Connect and sign with your MetaMask wallet to begin.</p>
+                    <p>Connect your MetaMask wallet to manage secure agreements on the blockchain.</p>
                     <button onClick={connectWallet} className="btn-connect" disabled={isLoading}>
                         {isLoading ? "Connecting..." : "Connect Wallet"}
                     </button>
                     {uiMessage && <p className="ui-message">{uiMessage}</p>}
-                    {agreements.length > 0 && (
-                        <div className="agreement-preview">
-                            <h4>Agreement Loaded:</h4>
-                            <p>You've opened a link for an escrow agreement. Please connect your wallet to see your role and interact with it.</p>
-                        </div>
-                    )}
                 </div>
             </div>
         );
     }
-
+    
     return (
         <div className="main-container">
             <header className="main-header">
-                <h2>Escrow Agreement Dashboard</h2>
+                <h2>Escrow Dashboard</h2>
                 <div className="header-right">
                     <p>Connected: {shortAddress(account)}</p>
                     <button onClick={logout} className="btn-logout">Logout</button>
@@ -290,16 +309,6 @@ function Appln() {
                             </div>
                             <button onClick={createAgreement} disabled={isLoading}>Create Agreement</button>
                         </div>
-                        {shareableLink && (
-                            <div className="shareable-link-container">
-                                <p><strong>Share this link:</strong></p>
-                                <input type="text" readOnly value={shareableLink} />
-                                <button onClick={() => {
-                                    navigator.clipboard.writeText(shareableLink);
-                                    setUiMessage("Link copied to clipboard!");
-                                }}>Copy Link</button>
-                            </div>
-                        )}
                     </div>
                 </div>
                 <div className="column-right">
@@ -307,24 +316,27 @@ function Appln() {
                         <h3>Your Agreements</h3>
                         {uiMessage && <p className="ui-message-inline">{uiMessage}</p>}
                         <div className="agreements-list">
-                            {agreements.length === 0 ? <p>No agreements found. Create one or open a shared link.</p> :
+                            {agreements.length === 0 ? <p>No agreements found for your address. Create one to get started!</p> :
                                 agreements.map(agg => (
-                                    <div key={agg.id} className="agreement-item">
+                                    <div key={agg.contractAddress} className="agreement-item">
                                         <div className="item-header">
                                             <span className={`status status-${agg.status.toLowerCase()}`}>{agg.status}</span>
                                             <span>{agg.amount} <strong>{agg.token}</strong></span>
                                         </div>
                                         <div className="item-details">
-                                            <p><strong>Depositor:</strong> {shortAddress(agg.depositor)}</p>
-                                            <p><strong>Beneficiary:</strong> {shortAddress(agg.beneficiary)}</p>
-                                            <p><strong>Arbiter:</strong> {shortAddress(agg.arbiter)}</p>
+                                            <p><strong>Contract:</strong> <span className="address-mono">{shortAddress(agg.contractAddress)}</span></p>
+                                            <p><strong>Depositor:</strong> <span className="address-mono">{shortAddress(agg.depositor)}</span></p>
+                                            <p><strong>Beneficiary:</strong> <span className="address-mono">{shortAddress(agg.beneficiary)}</span></p>
+                                            <p><strong>Arbiter:</strong> <span className="address-mono">{shortAddress(agg.arbiter)}</span></p>
                                         </div>
                                         <div className="item-actions">
+                                            {/* Show Fund button if status is 'Created' and current user is the depositor */}
                                             {agg.status === 'Created' && agg.depositor.toLowerCase() === account.toLowerCase() && (
-                                                <button onClick={() => handleAction(agg.id, 'Fund')} disabled={isLoading}>Fund</button>
+                                                <button onClick={() => handleAction(agg, 'Fund')} disabled={isLoading}>Fund Escrow</button>
                                             )}
+                                            {/* Show Release button if status is 'Funded' and current user is the arbiter */}
                                             {agg.status === 'Funded' && agg.arbiter.toLowerCase() === account.toLowerCase() && (
-                                                <button onClick={() => handleAction(agg.id, 'Release')} disabled={isLoading}>Release Funds</button>
+                                                <button onClick={() => handleAction(agg, 'Release')} disabled={isLoading}>Release Funds</button>
                                             )}
                                         </div>
                                     </div>

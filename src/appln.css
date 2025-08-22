@@ -15,6 +15,7 @@ body {
     align-items: center;
     height: 100vh;
     text-align: center;
+    padding: 20px;
 }
 
 .auth-box {
@@ -23,6 +24,7 @@ body {
     border-radius: 12px;
     border: 1px solid #2d2d2d;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    max-width: 450px;
 }
 
 .auth-box h1 {
@@ -89,6 +91,7 @@ body {
     padding: 8px 16px;
     border-radius: 6px;
     cursor: pointer;
+    transition: background-color 0.2s;
 }
 
 .btn-logout:hover {
@@ -97,9 +100,16 @@ body {
 
 .content-grid {
     display: grid;
-    grid-template-columns: 1fr 2fr;
+    grid-template-columns: 1fr; /* Default for mobile */
     gap: 24px;
 }
+
+@media (min-width: 992px) {
+    .content-grid {
+        grid-template-columns: 1fr 2fr; /* 2 columns for larger screens */
+    }
+}
+
 
 /* --- Reusable Card Component --- */
 .card {
@@ -140,7 +150,7 @@ body {
     color: #e0e0e0;
     border-radius: 6px;
     font-size: 1rem;
-    box-sizing: border-box;
+    box-sizing: border-box; /* Important for consistent sizing */
 }
 
 .amount-input-group {
@@ -164,9 +174,11 @@ body {
     font-weight: bold;
     border-radius: 6px;
     cursor: pointer;
+    transition: background-color 0.2s;
 }
 .form-group button:disabled {
     background-color: #444;
+    color: #888;
     cursor: not-allowed;
 }
 
@@ -174,6 +186,7 @@ body {
 .agreements-list {
     max-height: 70vh;
     overflow-y: auto;
+    padding-right: 10px; /* space for scrollbar */
 }
 
 .agreement-item {
@@ -182,6 +195,11 @@ body {
     border-radius: 8px;
     margin-bottom: 16px;
     border-left: 4px solid #bb86fc;
+    transition: transform 0.2s;
+}
+
+.agreement-item:hover {
+    transform: translateY(-2px);
 }
 
 .item-header {
@@ -196,10 +214,11 @@ body {
     border-radius: 12px;
     font-size: 0.8rem;
     font-weight: bold;
+    text-transform: uppercase;
 }
-.status-created { background-color: rgba(255, 165, 0, 0.2); color: orange; }
-.status-funded { background-color: rgba(3, 218, 198, 0.2); color: #03dac6; }
-.status-released { background-color: rgba(76, 175, 80, 0.2); color: #4caf50; }
+.status-created { background-color: rgba(255, 165, 0, 0.2); color: orange; border: 1px solid orange;}
+.status-funded { background-color: rgba(3, 218, 198, 0.2); color: #03dac6; border: 1px solid #03dac6;}
+.status-released { background-color: rgba(76, 175, 80, 0.2); color: #4caf50; border: 1px solid #4caf50;}
 
 .item-details p {
     margin: 6px 0;
@@ -209,7 +228,16 @@ body {
 }
 .item-details strong {
     color: #ddd;
+    min-width: 90px;
+    display: inline-block;
 }
+
+/* NEW STYLE for addresses */
+.address-mono {
+    font-family: monospace;
+    color: #ccc;
+}
+
 
 .item-actions {
     margin-top: 16px;
@@ -224,9 +252,14 @@ body {
     border-radius: 6px;
     font-weight: bold;
     cursor: pointer;
+    transition: background-color 0.2s;
+}
+.item-actions button:hover {
+    background-color: #a765f7;
 }
 .item-actions button:disabled {
     background-color: #444;
+    color: #888;
     cursor: not-allowed;
 }
 
@@ -235,60 +268,15 @@ body {
 .ui-message {
     margin-top: 20px;
     color: #03dac6;
+    font-weight: bold;
 }
 .ui-message-inline {
-    padding: 10px;
-    background-color: #2a2a2a;
+    padding: 12px;
+    background-color: rgba(3, 218, 198, 0.1);
+    border: 1px solid #03dac6;
     border-radius: 6px;
     margin-bottom: 16px;
     text-align: center;
     color: #03dac6;
-}
-
-/* --- Shareable Link Container --- */
-.shareable-link-container {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #2d2d2d;
-}
-.shareable-link-container p {
-    margin: 0 0 10px 0;
-}
-.shareable-link-container input {
-    width: 100%;
-    background-color: #1a1a1a;
-    color: #aaa;
-    padding: 8px;
-    border-radius: 4px;
-    border: 1px solid #444;
-    margin-bottom: 10px;
-    box-sizing: border-box;
-}
-.shareable-link-container button {
-    width: 100%;
-    padding: 8px;
-    background-color: #333;
-    color: #fff;
-    border: 1px solid #555;
-    cursor: pointer;
-}
-
-/* --- Agreement Preview on Auth Page --- */
-.agreement-preview {
-    margin-top: 24px;
-    padding: 16px;
-    border: 1px dashed #444;
-    border-radius: 8px;
-    background-color: rgba(3, 218, 198, 0.05);
-}
-
-.agreement-preview h4 {
-    margin: 0 0 8px 0;
-    color: #03dac6;
-}
-
-.agreement-preview p {
-    margin: 0;
-    font-size: 0.9rem;
-    color: #aaa;
+    word-wrap: break-word;
 }

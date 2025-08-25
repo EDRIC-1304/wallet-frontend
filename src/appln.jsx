@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
+import { motion, AnimatePresence } from 'framer-motion';
 import './appln.css';
 import EscrowJson from './Escrow.json';
 
@@ -32,7 +33,7 @@ const api = {
         },
         body: JSON.stringify(body)
     }),
-    put: (endpoint, body) => fetch(`${API_BASE_URL}${endpoint}`, { // NOTE: Typo from your version was corrected here
+    put: (endpoint, body) => fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json',
@@ -77,6 +78,58 @@ const AgreementTimer = ({ deadline, status }) => {
     );
 };
 
+// --- Loader Components (pure UI) ---
+const InlineSpinner = () => (
+    <span className="spinner inline" aria-label="loading" />
+);
+
+const PageOverlayLoader = ({ show, text = "Processing..." }) => (
+    <AnimatePresence>
+        {show && (
+            <motion.div
+                className="overlay-loader"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+            >
+                <motion.div
+                    className="overlay-card"
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.9, opacity: 0 }}
+                >
+                    <span className="spinner big" />
+                    <p>{text}</p>
+                </motion.div>
+            </motion.div>
+        )}
+    </AnimatePresence>
+);
+
+// --- Toast (auto-dismiss) ---
+const Toast = ({ message, onClose }) => {
+    useEffect(() => {
+        if (!message) return;
+        const t = setTimeout(() => onClose?.(), 4000);
+        return () => clearTimeout(t);
+    }, [message, onClose]);
+
+    return (
+        <AnimatePresence>
+            {message && (
+                <motion.div
+                    className="toast"
+                    initial={{ y: 40, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: 40, opacity: 0 }}
+                >
+                    <div className="toast-glow" />
+                    <div className="toast-content">{message}</div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+};
 
 function Appln() {
     // --- State Management ---
@@ -96,6 +149,8 @@ function Appln() {
     });
     const [uiMessage, setUiMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [balancesLoading, setBalancesLoading] = useState(false);
+    const [agreementsLoading, setAgreementsLoading] = useState(false);
     const [myRole, setMyRole] = useState('depositor');
     const [authState, setAuthState] = useState('LOGGED_OUT');
     const [authForm, setAuthForm] = useState({ identifier: '', password: '', username: '' });
@@ -117,6 +172,7 @@ function Appln() {
     const fetchAgreements = useCallback(async () => {
         if (!localStorage.getItem('authToken')) return;
         try {
+            setAgreementsLoading(true);
             const response = await api.get('/agreements');
             if (!response.ok) {
                 if (response.status === 401) logout();
@@ -128,12 +184,15 @@ function Appln() {
         } catch (error) {
             console.error(error);
             setUiMessage(`Error: Could not fetch agreements.`);
+        } finally {
+            setAgreementsLoading(false);
         }
     }, [logout]);
-    
+
     const updateBalances = useCallback(async (currentAccount, currentProvider) => {
         if (!currentAccount || !currentProvider) return;
         try {
+            setBalancesLoading(true);
             const bnbBalance = await currentProvider.getBalance(currentAccount);
             setBnb(ethers.formatEther(bnbBalance));
             const usdtContract = new ethers.Contract(USDT_CONTRACT_ADDRESS, TOKEN_ABI, currentProvider);
@@ -142,6 +201,8 @@ function Appln() {
             setUsdc(ethers.formatUnits(await usdcContract.balanceOf(currentAccount), 18));
         } catch (error) {
             console.error("Failed to update balances:", error);
+        } finally {
+            setBalancesLoading(false);
         }
     }, []);
 
@@ -154,7 +215,7 @@ function Appln() {
             const newProvider = new ethers.BrowserProvider(window.ethereum);
             const accounts = await newProvider.send("eth_requestAccounts", []);
             const currentAddress = accounts[0];
-            
+
             const checkResponse = await fetch(`${API_BASE_URL}/auth/check-user/${currentAddress}`);
             const { isRegistered } = await checkResponse.json();
 
@@ -194,7 +255,7 @@ function Appln() {
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error);
-            
+
             localStorage.setItem('authToken', data.token);
             setAccount(registrationAddress);
             setAuthState('LOGGED_IN');
@@ -246,20 +307,20 @@ function Appln() {
         try {
             const tokenAddress = token === 'USDT' ? USDT_CONTRACT_ADDRESS : USDC_CONTRACT_ADDRESS;
             const value = ethers.parseUnits(amount, 18);
-            
+
             const EscrowFactory = new ethers.ContractFactory(ESCROW_ABI, ESCROW_BYTECODE, signer);
             const escrowContract = await EscrowFactory.deploy(arbiter, beneficiary, depositor, tokenAddress, value);
             await escrowContract.waitForDeployment();
-            
+
             const contractAddress = await escrowContract.getAddress();
             setUiMessage(`2/3: Contract deployed at ${shortAddress(contractAddress)}. Saving to database...`);
-            
+
             const response = await api.post('/agreements', { contractAddress, depositor, arbiter, beneficiary, amount, token, tokenAddress });
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || "Failed to save agreement.");
             }
-            
+
             setUiMessage("3/3: Agreement created and saved successfully!");
             setFormState({ depositor: '', arbiter: '', beneficiary: '', amount: '', token: 'USDT' });
             setMyRole('depositor');
@@ -299,11 +360,11 @@ function Appln() {
             } else {
                 throw new Error("Invalid action");
             }
-            
+
             const nextStep = action === "Fund" ? "3/3" : "2/2";
             setUiMessage(`${nextStep}: Transaction sent (${shortAddress(tx.hash)}). Waiting for confirmation...`);
             await tx.wait();
-            
+
             setUiMessage("Transaction confirmed! Updating status in database...");
             const newStatus = action === "Fund" ? "Funded" : "Released";
             const response = await api.put(`/agreements/${agreement.contractAddress}/status`, { status: newStatus });
@@ -334,7 +395,7 @@ function Appln() {
             } catch { logout(); }
         }
     }, [logout]);
-    
+
     useEffect(() => {
         if (authState === 'LOGGED_IN' && account) {
             if (window.ethereum) {
@@ -358,77 +419,196 @@ function Appln() {
         }
     }, [myRole, account]);
 
+    // --- Auto-dismiss toast when not loading (doesn't change logic) ---
+    const uiToastClose = useCallback(() => {
+        if (!isLoading) setUiMessage('');
+    }, [isLoading]);
+
+    // --- Motion Variants ---
+    const cardVariant = {
+        hidden: { opacity: 0, y: 12 },
+        show: { opacity: 1, y: 0, transition: { duration: 0.35 } }
+    };
+    const listVariant = {
+        show: {
+            transition: {
+                staggerChildren: 0.06,
+                delayChildren: 0.05
+            }
+        }
+    };
+    const itemVariant = {
+        hidden: { opacity: 0, y: 10, scale: 0.98 },
+        show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.25 } }
+    };
+
     // --- RENDER LOGIC ---
     if (authState !== 'LOGGED_IN') {
         return (
             <div className="auth-container">
-                <div className="auth-box">
-                    <h1>Escrow DApp</h1>
-                    <p className="auth-subtitle">Secure, decentralized agreements on the blockchain.</p>
-                    {uiMessage && <p className="ui-message">{uiMessage}</p>}
-                    <div className="auth-columns">
-                        <div className="auth-column">
-                            <h2>Returning User?</h2>
-                            <p>Log in with your credentials.</p>
-                            <form onSubmit={handleLogin} className="auth-form">
-                                <input placeholder="Wallet Address or Username" value={authForm.identifier} onChange={(e) => setAuthForm({ ...authForm, identifier: e.target.value })} />
-                                <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
-                                <button type="submit" className="btn-primary" disabled={isLoading}>{isLoading ? 'Logging in...' : 'Login'}</button>
-                            </form>
-                        </div>
-                        <div className="column-separator"></div>
-                        <div className="auth-column">
-                            <h2>First Time Here?</h2>
-                            <p>Connect your wallet to start.</p>
-                            {authState === 'LOGGED_OUT' && (
-                                <button onClick={handleWalletConnect} className="btn-connect" disabled={isLoading}>{isLoading ? "Connecting..." : "Connect & Register Wallet"}</button>
-                            )}
-                            {authState === 'REGISTERING' && (
-                                <form onSubmit={handleRegister} className="auth-form">
-                                    <p>Registering for: <strong>{shortAddress(registrationAddress)}</strong></p>
-                                    <input type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} required/>
-                                    <input placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
-                                    <button type="submit" className="btn-primary" disabled={isLoading}>{isLoading ? 'Creating Account...' : 'Create Account'}</button>
+                <AnimatePresence>
+                    <motion.div
+                        className="auth-box"
+                        initial={{ y: 20, opacity: 0, scale: 0.98 }}
+                        animate={{ y: 0, opacity: 1, scale: 1 }}
+                        exit={{ y: 20, opacity: 0, scale: 0.98 }}
+                        transition={{ duration: 0.35 }}
+                    >
+                        <motion.h1 layoutId="title-glow">Escrow DApp</motion.h1>
+                        <p className="auth-subtitle">Secure, decentralized agreements on the blockchain.</p>
+                        {uiMessage && <p className="ui-message">{uiMessage}</p>}
+                        <div className="auth-columns">
+                            <motion.div className="auth-column" variants={cardVariant} initial="hidden" animate="show">
+                                <h2>Returning User?</h2>
+                                <p>Log in with your credentials.</p>
+                                <form onSubmit={handleLogin} className="auth-form">
+                                    <input placeholder="Wallet Address or Username" value={authForm.identifier} onChange={(e) => setAuthForm({ ...authForm, identifier: e.target.value })} />
+                                    <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
+                                    <motion.button
+                                        type="submit"
+                                        className="btn-primary"
+                                        disabled={isLoading}
+                                        whileTap={{ scale: 0.98 }}
+                                    >
+                                        {isLoading ? <><InlineSpinner /> Logging in...</> : 'Login'}
+                                    </motion.button>
                                 </form>
-                            )}
+                            </motion.div>
+                            <div className="column-separator" />
+                            <motion.div className="auth-column" variants={cardVariant} initial="hidden" animate="show">
+                                <h2>First Time Here?</h2>
+                                <p>Connect your wallet to start.</p>
+                                {authState === 'LOGGED_OUT' && (
+                                    <motion.button
+                                        onClick={handleWalletConnect}
+                                        className="btn-connect"
+                                        disabled={isLoading}
+                                        whileTap={{ scale: 0.98 }}
+                                    >
+                                        {isLoading ? <><InlineSpinner /> Connecting...</> : "Connect & Register Wallet"}
+                                    </motion.button>
+                                )}
+                                {authState === 'REGISTERING' && (
+                                    <form onSubmit={handleRegister} className="auth-form">
+                                        <p>Registering for: <strong>{shortAddress(registrationAddress)}</strong></p>
+                                        <input type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} required />
+                                        <input placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
+                                        <motion.button
+                                            type="submit"
+                                            className="btn-primary"
+                                            disabled={isLoading}
+                                            whileTap={{ scale: 0.98 }}
+                                        >
+                                            {isLoading ? <><InlineSpinner /> Creating Account...</> : 'Create Account'}
+                                        </motion.button>
+                                    </form>
+                                )}
+                            </motion.div>
                         </div>
-                    </div>
-                </div>
+                    </motion.div>
+                </AnimatePresence>
+                <Toast message={uiMessage} onClose={uiToastClose} />
+                <PageOverlayLoader show={isLoading} text="Please wait..." />
             </div>
         );
     }
-    
+
     return (
         <div className="main-container">
             <header className="main-header">
-                <h2>Escrow Dashboard</h2>
+                <motion.h2 initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.35 }}>
+                    Escrow Dashboard
+                </motion.h2>
                 <div className="header-right">
-                    <p>Connected: {shortAddress(account)}</p>
-                    <button onClick={logout} className="btn-logout">Logout</button>
+                    <motion.p
+                        initial={{ opacity: 0, x: 8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.35, delay: 0.1 }}
+                    >
+                        Connected: {shortAddress(account)}
+                    </motion.p>
+                    <motion.button
+                        onClick={logout}
+                        className="btn-logout"
+                        whileTap={{ scale: 0.97 }}
+                        whileHover={{ scale: 1.03 }}
+                    >
+                        Logout
+                    </motion.button>
                 </div>
             </header>
+
             <div className="content-grid">
-                <div className="column-left">
-                    <div className="card">
+                <motion.div className="column-left" variants={listVariant} initial="hidden" animate="show">
+                    <motion.div className="card" variants={cardVariant}>
                         <h3>Your Balances</h3>
                         <div className="balance-list">
-                            <p><strong>BNB:</strong> {parseFloat(bnb).toFixed(4)}</p>
-                            <p><strong>USDT:</strong> {parseFloat(usdt).toFixed(2)}</p>
-                            <p><strong>USDC:</strong> {parseFloat(usdc).toFixed(2)}</p>
+                            {balancesLoading ? (
+                                <>
+                                    <div className="skeleton-row" />
+                                    <div className="skeleton-row" />
+                                    <div className="skeleton-row" />
+                                </>
+                            ) : (
+                                <>
+                                    <p><strong>BNB:</strong> {parseFloat(bnb).toFixed(4)}</p>
+                                    <p><strong>USDT:</strong> {parseFloat(usdt).toFixed(2)}</p>
+                                    <p><strong>USDC:</strong> {parseFloat(usdc).toFixed(2)}</p>
+                                </>
+                            )}
                         </div>
-                    </div>
-                    <div className="card">
+                        <motion.button
+                            className="btn-refresh"
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => updateBalances(account, provider)}
+                            disabled={balancesLoading}
+                        >
+                            {balancesLoading ? <><InlineSpinner /> Refreshing...</> : 'Refresh Balances'}
+                        </motion.button>
+                    </motion.div>
+
+                    <motion.div className="card" variants={cardVariant}>
                         <h3>Create New Escrow</h3>
                         <div className="role-selector">
                             <p>I am the:</p>
-                            <button className={myRole === 'depositor' ? 'active' : ''} onClick={() => setMyRole('depositor')}>Depositor</button>
-                            <button className={myRole === 'arbiter' ? 'active' : ''} onClick={() => setMyRole('arbiter')}>Arbiter</button>
-                            <button className={myRole === 'beneficiary' ? 'active' : ''} onClick={() => setMyRole('beneficiary')}>Beneficiary</button>
+                            <motion.button
+                                className={myRole === 'depositor' ? 'active' : ''}
+                                onClick={() => setMyRole('depositor')}
+                                whileTap={{ scale: 0.98 }}
+                            >
+                                Depositor
+                            </motion.button>
+                            <motion.button
+                                className={myRole === 'arbiter' ? 'active' : ''}
+                                onClick={() => setMyRole('arbiter')}
+                                whileTap={{ scale: 0.98 }}
+                            >
+                                Arbiter
+                            </motion.button>
+                            <motion.button
+                                className={myRole === 'beneficiary' ? 'active' : ''}
+                                onClick={() => setMyRole('beneficiary')}
+                                whileTap={{ scale: 0.98 }}
+                            >
+                                Beneficiary
+                            </motion.button>
                         </div>
                         <div className="form-group">
-                            {myRole !== 'depositor' ? (<input placeholder="Depositor Address" value={formState.depositor} onChange={(e) => setFormState({ ...formState, depositor: e.target.value })} />) : <input value={shortAddress(account)} readOnly disabled />}
-                            {myRole !== 'arbiter' ? (<input placeholder="Arbiter Address" value={formState.arbiter} onChange={(e) => setFormState({ ...formState, arbiter: e.target.value })} />) : <input value={shortAddress(account)} readOnly disabled />}
-                            {myRole !== 'beneficiary' ? (<input placeholder="Beneficiary Address" value={formState.beneficiary} onChange={(e) => setFormState({ ...formState, beneficiary: e.target.value })} />) : <input value={shortAddress(account)} readOnly disabled />}
+                            {myRole !== 'depositor' ? (
+                                <input placeholder="Depositor Address" value={formState.depositor} onChange={(e) => setFormState({ ...formState, depositor: e.target.value })} />
+                            ) : (
+                                <input value={shortAddress(account)} readOnly disabled />
+                            )}
+                            {myRole !== 'arbiter' ? (
+                                <input placeholder="Arbiter Address" value={formState.arbiter} onChange={(e) => setFormState({ ...formState, arbiter: e.target.value })} />
+                            ) : (
+                                <input value={shortAddress(account)} readOnly disabled />
+                            )}
+                            {myRole !== 'beneficiary' ? (
+                                <input placeholder="Beneficiary Address" value={formState.beneficiary} onChange={(e) => setFormState({ ...formState, beneficiary: e.target.value })} />
+                            ) : (
+                                <input value={shortAddress(account)} readOnly disabled />
+                            )}
                             <div className="amount-input-group">
                                 <input type="number" placeholder="Amount" value={formState.amount} onChange={(e) => setFormState({ ...formState, amount: e.target.value })} />
                                 <select value={formState.token} onChange={(e) => setFormState({ ...formState, token: e.target.value })}>
@@ -436,46 +616,87 @@ function Appln() {
                                     <option value="USDC">USDC</option>
                                 </select>
                             </div>
-                            <button onClick={createAgreement} disabled={isLoading}>Create Agreement</button>
+                            <motion.button
+                                onClick={createAgreement}
+                                disabled={isLoading}
+                                className="btn-action"
+                                whileTap={{ scale: 0.98 }}
+                            >
+                                {isLoading ? <><InlineSpinner /> Creating...</> : 'Create Agreement'}
+                            </motion.button>
                         </div>
-                    </div>
-                </div>
-                <div className="column-right">
-                    <div className="card">
+                    </motion.div>
+                </motion.div>
+
+                <motion.div className="column-right" variants={listVariant} initial="hidden" animate="show">
+                    <motion.div className="card" variants={cardVariant}>
                         <h3>Your Agreements</h3>
                         {uiMessage && <p className="ui-message-inline">{uiMessage}</p>}
                         <div className="agreements-list">
-                            {agreements.length === 0 ? <p>No agreements found for your address.</p> :
-                                agreements.map(agg => (
-                                    <div key={agg.contractAddress} className="agreement-item">
-                                        <div className="item-header">
-                                            <span className={`status status-${agg.status.toLowerCase()}`}>{agg.status}</span>
-                                            <span>{agg.amount} <strong>{agg.token}</strong></span>
-                                        </div>
-                                        <div className="item-details">
-                                            <p><strong>Depositor:</strong> <span className="address-mono">{shortAddress(agg.depositor)}</span></p>
-                                            <p><strong>Beneficiary:</strong> <span className="address-mono">{shortAddress(agg.beneficiary)}</span></p>
-                                            <p><strong>Arbiter:</strong> <span className="address-mono">{shortAddress(agg.arbiter)}</span></p>
-                                        </div>
-                                        <AgreementTimer deadline={agg.deadline} status={agg.status} />
-                                        <div className="item-actions">
-                                            {agg.status === 'Created' && agg.depositor.toLowerCase() === account?.toLowerCase() && (
-                                                <button onClick={() => handleAction(agg, 'Fund')} disabled={isLoading}>Fund Escrow</button>
-                                            )}
-                                            {agg.status === 'Funded' && agg.arbiter.toLowerCase() === account?.toLowerCase() && (
-                                                <button onClick={() => handleAction(agg, 'Release')} disabled={isLoading}>Release Funds</button>
-                                            )}
-                                            {agg.status === 'Expired' && (
-                                                <p className="expired-message">This agreement has expired.</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))
-                            }
+                            {agreementsLoading ? (
+                                <>
+                                    <div className="skeleton-card" />
+                                    <div className="skeleton-card" />
+                                    <div className="skeleton-card" />
+                                </>
+                            ) : agreements.length === 0 ? (
+                                <p>No agreements found for your address.</p>
+                            ) : (
+                                <AnimatePresence>
+                                    {agreements.map(agg => (
+                                        <motion.div
+                                            key={agg.contractAddress}
+                                            className="agreement-item"
+                                            variants={itemVariant}
+                                            initial="hidden"
+                                            animate="show"
+                                            exit={{ opacity: 0, scale: 0.98 }}
+                                            layout
+                                        >
+                                            <div className="item-header">
+                                                <span className={`status status-${(agg.status || '').toLowerCase()}`}>{agg.status}</span>
+                                                <span>{agg.amount} <strong>{agg.token}</strong></span>
+                                            </div>
+                                            <div className="item-details">
+                                                <p><strong>Depositor:</strong> <span className="address-mono">{shortAddress(agg.depositor)}</span></p>
+                                                <p><strong>Beneficiary:</strong> <span className="address-mono">{shortAddress(agg.beneficiary)}</span></p>
+                                                <p><strong>Arbiter:</strong> <span className="address-mono">{shortAddress(agg.arbiter)}</span></p>
+                                            </div>
+                                            <AgreementTimer deadline={agg.deadline} status={agg.status} />
+                                            <div className="item-actions">
+                                                {agg.status === 'Created' && agg.depositor?.toLowerCase() === account?.toLowerCase() && (
+                                                    <motion.button
+                                                        onClick={() => handleAction(agg, 'Fund')}
+                                                        disabled={isLoading}
+                                                        whileTap={{ scale: 0.98 }}
+                                                    >
+                                                        {isLoading ? <><InlineSpinner /> Funding...</> : 'Fund Escrow'}
+                                                    </motion.button>
+                                                )}
+                                                {agg.status === 'Funded' && agg.arbiter?.toLowerCase() === account?.toLowerCase() && (
+                                                    <motion.button
+                                                        onClick={() => handleAction(agg, 'Release')}
+                                                        disabled={isLoading}
+                                                        whileTap={{ scale: 0.98 }}
+                                                    >
+                                                        {isLoading ? <><InlineSpinner /> Releasing...</> : 'Release Funds'}
+                                                    </motion.button>
+                                                )}
+                                                {agg.status === 'Expired' && (
+                                                    <p className="expired-message">This agreement has expired.</p>
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    ))}
+                                </AnimatePresence>
+                            )}
                         </div>
-                    </div>
-                </div>
+                    </motion.div>
+                </motion.div>
             </div>
+
+            <Toast message={uiMessage} onClose={uiToastClose} />
+            <PageOverlayLoader show={isLoading} text="Processing transaction..." />
         </div>
     );
 }

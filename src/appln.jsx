@@ -20,7 +20,6 @@ const ESCROW_BYTECODE = EscrowJson.bytecode;
 const shortAddress = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
 // --- NEW: API Utility with JWT ---
-// Helper to automatically add our auth token to every request
 const api = {
     get: (endpoint) => fetch(`${API_BASE_URL}${endpoint}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
@@ -57,48 +56,11 @@ function Appln() {
     const [isLoading, setIsLoading] = useState(false);
 
     // --- NEW: Authentication State ---
-    const [authState, setAuthState] = useState('LOGGED_OUT'); // LOGGED_OUT, REGISTERING, LOGGED_IN
+    const [authState, setAuthState] = useState('LOGGED_OUT');
     const [authForm, setAuthForm] = useState({ identifier: '', password: '', username: '' });
     const [registrationAddress, setRegistrationAddress] = useState(null);
 
-    // --- Data Fetching & Callbacks ---
-    const fetchAgreements = useCallback(async () => {
-        if (!localStorage.getItem('authToken')) return;
-        try {
-            const response = await api.get('/agreements'); // Uses JWT
-            if (!response.ok) {
-                if (response.status === 401) logout();
-                throw new Error("Failed to fetch agreements from the server.");
-            }
-            const data = await response.json();
-            setAgreements(data);
-        } catch (error) {
-            console.error(error);
-            setUiMessage(`Error: Could not fetch agreements.`);
-        }
-    }, []);
-    
-    const updateBalances = useCallback(async (currentAccount) => {
-        // This function requires a live provider, so we'll set it up after login
-        if (!currentAccount) return;
-        try {
-            const newProvider = new ethers.BrowserProvider(window.ethereum);
-            setProvider(newProvider); // Set provider here
-            
-            const bnbBalance = await newProvider.getBalance(currentAccount);
-            setBnb(ethers.formatEther(bnbBalance));
-            const usdtContract = new ethers.Contract(USDT_CONTRACT_ADDRESS, TOKEN_ABI, newProvider);
-            const usdtBalance = await usdtContract.balanceOf(currentAccount);
-            setUsdt(ethers.formatUnits(usdtBalance, 18));
-            const usdcContract = new ethers.Contract(USDC_CONTRACT_ADDRESS, TOKEN_ABI, newProvider);
-            const usdcBalance = await usdcContract.balanceOf(currentAccount);
-            setUsdc(ethers.formatUnits(usdcBalance, 18));
-        } catch (error) {
-            console.error("Failed to update balances:", error);
-            // Don't show UI error for this, it's a background task
-        }
-    }, []);
-
+    // --- Logout Function (clears JWT) ---
     const logout = useCallback(() => {
         localStorage.removeItem('authToken');
         setAccount(null);
@@ -109,15 +71,129 @@ function Appln() {
         setAuthForm({ identifier: '', password: '', username: '' });
         setUiMessage("You have been successfully logged out.");
     }, []);
-    
-    // --- NEW: Authentication Handlers ---
-    const handleWalletConnect = async () => { /* ... see previous response ... */ };
-    const handleRegister = async (e) => { /* ... see previous response ... */ };
-    const handleLogin = async (e) => { /* ... see previous response ... */ };
 
-    // --- Use Effects ---
-    useEffect(() => { /* ... handleAccountsChanged from previous response (optional with JWT)... */ });
+    // --- Data Fetching (now uses JWT) ---
+    const fetchAgreements = useCallback(async () => {
+        if (!localStorage.getItem('authToken')) return;
+        try {
+            const response = await api.get('/agreements');
+            if (!response.ok) {
+                if (response.status === 401) logout();
+                throw new Error("Session expired or invalid.");
+            }
+            const data = await response.json();
+            setAgreements(data);
+            setUiMessage(""); // Clear any previous error messages on success
+        } catch (error) {
+            console.error(error);
+            setUiMessage(`Error: Could not fetch agreements.`);
+        }
+    }, [logout]);
     
+    const updateBalances = useCallback(async (currentAccount, currentProvider) => {
+        if (!currentAccount || !currentProvider) return;
+        try {
+            const bnbBalance = await currentProvider.getBalance(currentAccount);
+            setBnb(ethers.formatEther(bnbBalance));
+            const usdtContract = new ethers.Contract(USDT_CONTRACT_ADDRESS, TOKEN_ABI, currentProvider);
+            setUsdt(ethers.formatUnits(await usdtContract.balanceOf(currentAccount), 18));
+            const usdcContract = new ethers.Contract(USDC_CONTRACT_ADDRESS, TOKEN_ABI, currentProvider);
+            setUsdc(ethers.formatUnits(await usdcContract.balanceOf(currentAccount), 18));
+        } catch (error) {
+            console.error("Failed to update balances:", error);
+        }
+    }, []);
+
+    // --- NEW: Authentication Handlers ---
+    const handleWalletConnect = async () => {
+        if (typeof window.ethereum === "undefined") return setUiMessage("MetaMask not detected.");
+        setIsLoading(true);
+        setUiMessage("Connecting to wallet...");
+        try {
+            const newProvider = new ethers.BrowserProvider(window.ethereum);
+            const accounts = await newProvider.send("eth_requestAccounts", []);
+            const currentAddress = accounts[0];
+            
+            const checkResponse = await fetch(`${API_BASE_URL}/auth/check-user/${currentAddress}`);
+            const { isRegistered } = await checkResponse.json();
+
+            if (isRegistered) {
+                setUiMessage('Account found. Please log in with your password.');
+                setAuthState('LOGGED_OUT');
+                setAuthForm({ ...authForm, identifier: currentAddress });
+            } else {
+                setUiMessage('New wallet detected. Please sign a message to prove ownership.');
+                const newSigner = await newProvider.getSigner();
+                await newSigner.signMessage(`Register for Escrow DApp: ${currentAddress}`);
+                setRegistrationAddress(currentAddress);
+                setAuthState('REGISTERING');
+                setUiMessage('Signature verified! Please create a password to secure your account.');
+            }
+        } catch (error) {
+            setUiMessage('Connection or signature failed.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleRegister = async (e) => {
+        e.preventDefault();
+        if (!authForm.password) return setUiMessage("Password is required.");
+        setIsLoading(true);
+        setUiMessage("Creating your account...");
+        try {
+            const response = await fetch(`${API_BASE_URL}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    address: registrationAddress,
+                    password: authForm.password,
+                    username: authForm.username || undefined,
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+            
+            localStorage.setItem('authToken', data.token);
+            setAccount(registrationAddress);
+            setAuthState('LOGGED_IN');
+            setUiMessage('');
+        } catch (error) {
+            setUiMessage(`Registration failed: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setUiMessage("Logging in...");
+        try {
+            const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    identifier: authForm.identifier,
+                    password: authForm.password,
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+
+            const decodedToken = JSON.parse(atob(data.token.split('.')[1]));
+            setAccount(decodedToken.address);
+            localStorage.setItem('authToken', data.token);
+            setAuthState('LOGGED_IN');
+            setUiMessage('');
+        } catch (error) {
+            setUiMessage(`Login failed: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // --- Use Effects to manage state changes ---
     useEffect(() => {
         const token = localStorage.getItem('authToken');
         if (token) {
@@ -132,32 +208,20 @@ function Appln() {
             } catch { logout(); }
         }
     }, [logout]);
-
+    
     useEffect(() => {
         if (authState === 'LOGGED_IN' && account) {
-            updateBalances(account);
+            const newProvider = new ethers.BrowserProvider(window.ethereum);
+            setProvider(newProvider);
+            updateBalances(account, newProvider);
             fetchAgreements();
-            // Set up signer if MetaMask is available
-            if (typeof window.ethereum !== "undefined") {
-                const newProvider = new ethers.BrowserProvider(window.ethereum);
-                newProvider.getSigner().then(setSigner);
-            }
+            newProvider.getSigner().then(setSigner);
         }
     }, [authState, account, updateBalances, fetchAgreements]);
 
     // --- Escrow Core Functions (Updated to use JWT) ---
-    const createAgreement = async () => {
-        if (!signer || !account) return setUiMessage("Please connect wallet and sign in first.");
-        // ... rest of your function is the same, but the POST request uses the `api` helper
-        const response = await api.post('/agreements', { /* body */ });
-    };
-
-    const handleAction = async (agreement, action) => {
-        if (!signer) return setUiMessage("Signer not found. Please reconnect wallet.");
-        // ... rest of your function is the same, but the PUT request uses the `api` helper
-        const response = await api.put(`/agreements/${agreement.contractAddress}/status`, { status: newStatus });
-    };
-
+    const createAgreement = async () => { /* ... Unchanged from your original code, but uses JWT via api.post ... */ };
+    const handleAction = async (agreement, action) => { /* ... Unchanged from your original code, but uses JWT via api.put ... */ };
 
     // --- RENDER LOGIC ---
     if (authState !== 'LOGGED_IN') {
@@ -167,8 +231,27 @@ function Appln() {
                     <h1>Escrow DApp</h1>
                     {uiMessage && <p className="ui-message">{uiMessage}</p>}
 
-                    {authState === 'LOGGED_OUT' && ( /* ... JSX from previous response ... */ )}
-                    {authState === 'REGISTERING' && ( /* ... JSX from previous response ... */ )}
+                    {authState === 'LOGGED_OUT' && (
+                        <>
+                            <p>Log in or connect a new wallet to begin.</p>
+                            <form onSubmit={handleLogin} className="auth-form">
+                                <input placeholder="Wallet Address or Username" value={authForm.identifier} onChange={(e) => setAuthForm({...authForm, identifier: e.target.value})} />
+                                <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({...authForm, password: e.target.value})} />
+                                <button type="submit" disabled={isLoading}>{isLoading ? 'Logging in...' : 'Login'}</button>
+                            </form>
+                            <p className="separator">OR</p>
+                            <button onClick={handleWalletConnect} className="btn-connect" disabled={isLoading}>{isLoading ? "Connecting..." : "Connect & Register Wallet"}</button>
+                        </>
+                    )}
+
+                    {authState === 'REGISTERING' && (
+                         <form onSubmit={handleRegister} className="auth-form">
+                            <p>Registering for: <strong>{shortAddress(registrationAddress)}</strong></p>
+                            <input type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({...authForm, password: e.target.value})} required/>
+                            <input placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({...authForm, username: e.target.value})} />
+                            <button type="submit" disabled={isLoading}>{isLoading ? 'Creating Account...' : 'Create Account'}</button>
+                        </form>
+                    )}
                 </div>
             </div>
         );
@@ -218,7 +301,24 @@ function Appln() {
                             {agreements.length === 0 ? <p>No agreements found for your address. Create one to get started!</p> :
                                 agreements.map(agg => (
                                     <div key={agg.contractAddress} className="agreement-item">
-                                        {/* ... Your existing agreement item JSX ... */}
+                                        <div className="item-header">
+                                            <span className={`status status-${agg.status.toLowerCase()}`}>{agg.status}</span>
+                                            <span>{agg.amount} <strong>{agg.token}</strong></span>
+                                        </div>
+                                        <div className="item-details">
+                                            <p><strong>Contract:</strong> <span className="address-mono">{shortAddress(agg.contractAddress)}</span></p>
+                                            <p><strong>Depositor:</strong> <span className="address-mono">{shortAddress(agg.depositor)}</span></p>
+                                            <p><strong>Beneficiary:</strong> <span className="address-mono">{shortAddress(agg.beneficiary)}</span></p>
+                                            <p><strong>Arbiter:</strong> <span className="address-mono">{shortAddress(agg.arbiter)}</span></p>
+                                        </div>
+                                        <div className="item-actions">
+                                            {agg.status === 'Created' && agg.depositor.toLowerCase() === account?.toLowerCase() && (
+                                                <button onClick={() => handleAction(agg, 'Fund')} disabled={isLoading}>Fund Escrow</button>
+                                            )}
+                                            {agg.status === 'Funded' && agg.arbiter.toLowerCase() === account?.toLowerCase() && (
+                                                <button onClick={() => handleAction(agg, 'Release')} disabled={isLoading}>Release Funds</button>
+                                            )}
+                                        </div>
                                     </div>
                                 ))
                             }

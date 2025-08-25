@@ -32,7 +32,7 @@ const api = {
         },
         body: JSON.stringify(body)
     }),
-    put: (endpoint, body) => fetch(`${API_BASE_URL}${endpoint}`, {
+    put: (endpoint, body) => fetch(`${API_BASE_URL}${endpoint}`, { // NOTE: Typo from your version was corrected here
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json',
@@ -41,6 +41,42 @@ const api = {
         body: JSON.stringify(body)
     }),
 };
+
+// --- Reusable Timer Component ---
+const AgreementTimer = ({ deadline, status }) => {
+    const calculateTimeLeft = useCallback(() => {
+        const difference = new Date(deadline) - new Date();
+        if (difference > 0) {
+            return {
+                minutes: Math.floor((difference / 1000 / 60) % 60),
+                seconds: Math.floor((difference / 1000) % 60),
+            };
+        }
+        return {};
+    }, [deadline]);
+
+    const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+
+    useEffect(() => {
+        if (status !== 'Created') return;
+        const timer = setInterval(() => setTimeLeft(calculateTimeLeft()), 1000);
+        return () => clearInterval(timer);
+    }, [status, calculateTimeLeft]);
+
+    if (status !== 'Created' && status !== 'Expired') return null;
+
+    const timerText = Object.keys(timeLeft).length
+        ? `${String(timeLeft.minutes).padStart(2, '0')}:${String(timeLeft.seconds).padStart(2, '0')}`
+        : "Time's up!";
+
+    return (
+        <div className="timer">
+            <span className="timer-icon">⏳</span>
+            <span className="timer-text">Time to Fund: {timerText}</span>
+        </div>
+    );
+};
+
 
 function Appln() {
     // --- State Management ---
@@ -301,11 +337,13 @@ function Appln() {
     
     useEffect(() => {
         if (authState === 'LOGGED_IN' && account) {
-            const newProvider = new ethers.BrowserProvider(window.ethereum);
-            setProvider(newProvider);
-            updateBalances(account, newProvider);
+            if (window.ethereum) {
+                const newProvider = new ethers.BrowserProvider(window.ethereum);
+                setProvider(newProvider);
+                updateBalances(account, newProvider);
+                newProvider.getSigner().then(setSigner).catch(console.error);
+            }
             fetchAgreements();
-            newProvider.getSigner().then(setSigner).catch(console.error);
         }
     }, [authState, account, updateBalances, fetchAgreements]);
 
@@ -333,8 +371,8 @@ function Appln() {
                             <h2>Returning User?</h2>
                             <p>Log in with your credentials.</p>
                             <form onSubmit={handleLogin} className="auth-form">
-                                <input placeholder="Wallet Address or Username" value={authForm.identifier} onChange={(e) => setAuthForm({...authForm, identifier: e.target.value})} />
-                                <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({...authForm, password: e.target.value})} />
+                                <input placeholder="Wallet Address or Username" value={authForm.identifier} onChange={(e) => setAuthForm({ ...authForm, identifier: e.target.value })} />
+                                <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
                                 <button type="submit" className="btn-primary" disabled={isLoading}>{isLoading ? 'Logging in...' : 'Login'}</button>
                             </form>
                         </div>
@@ -348,8 +386,8 @@ function Appln() {
                             {authState === 'REGISTERING' && (
                                 <form onSubmit={handleRegister} className="auth-form">
                                     <p>Registering for: <strong>{shortAddress(registrationAddress)}</strong></p>
-                                    <input type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({...authForm, password: e.target.value})} required/>
-                                    <input placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({...authForm, username: e.target.value})} />
+                                    <input type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} required/>
+                                    <input placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
                                     <button type="submit" className="btn-primary" disabled={isLoading}>{isLoading ? 'Creating Account...' : 'Create Account'}</button>
                                 </form>
                             )}
@@ -388,18 +426,12 @@ function Appln() {
                             <button className={myRole === 'beneficiary' ? 'active' : ''} onClick={() => setMyRole('beneficiary')}>Beneficiary</button>
                         </div>
                         <div className="form-group">
-                            {myRole !== 'depositor' ? (
-                                <input placeholder="Depositor Address" value={formState.depositor} onChange={(e) => setFormState({...formState, depositor: e.target.value})} />
-                            ) : <input value={shortAddress(account)} readOnly disabled />}
-                            {myRole !== 'arbiter' ? (
-                                <input placeholder="Arbiter Address" value={formState.arbiter} onChange={(e) => setFormState({...formState, arbiter: e.target.value})} />
-                            ) : <input value={shortAddress(account)} readOnly disabled />}
-                            {myRole !== 'beneficiary' ? (
-                                <input placeholder="Beneficiary Address" value={formState.beneficiary} onChange={(e) => setFormState({...formState, beneficiary: e.target.value})} />
-                            ) : <input value={shortAddress(account)} readOnly disabled />}
+                            {myRole !== 'depositor' ? (<input placeholder="Depositor Address" value={formState.depositor} onChange={(e) => setFormState({ ...formState, depositor: e.target.value })} />) : <input value={shortAddress(account)} readOnly disabled />}
+                            {myRole !== 'arbiter' ? (<input placeholder="Arbiter Address" value={formState.arbiter} onChange={(e) => setFormState({ ...formState, arbiter: e.target.value })} />) : <input value={shortAddress(account)} readOnly disabled />}
+                            {myRole !== 'beneficiary' ? (<input placeholder="Beneficiary Address" value={formState.beneficiary} onChange={(e) => setFormState({ ...formState, beneficiary: e.target.value })} />) : <input value={shortAddress(account)} readOnly disabled />}
                             <div className="amount-input-group">
-                                <input type="number" placeholder="Amount" value={formState.amount} onChange={(e) => setFormState({...formState, amount: e.target.value})} />
-                                <select value={formState.token} onChange={(e) => setFormState({...formState, token: e.target.value})}>
+                                <input type="number" placeholder="Amount" value={formState.amount} onChange={(e) => setFormState({ ...formState, amount: e.target.value })} />
+                                <select value={formState.token} onChange={(e) => setFormState({ ...formState, token: e.target.value })}>
                                     <option value="USDT">USDT</option>
                                     <option value="USDC">USDC</option>
                                 </select>
@@ -425,12 +457,16 @@ function Appln() {
                                             <p><strong>Beneficiary:</strong> <span className="address-mono">{shortAddress(agg.beneficiary)}</span></p>
                                             <p><strong>Arbiter:</strong> <span className="address-mono">{shortAddress(agg.arbiter)}</span></p>
                                         </div>
+                                        <AgreementTimer deadline={agg.deadline} status={agg.status} />
                                         <div className="item-actions">
                                             {agg.status === 'Created' && agg.depositor.toLowerCase() === account?.toLowerCase() && (
                                                 <button onClick={() => handleAction(agg, 'Fund')} disabled={isLoading}>Fund Escrow</button>
                                             )}
                                             {agg.status === 'Funded' && agg.arbiter.toLowerCase() === account?.toLowerCase() && (
                                                 <button onClick={() => handleAction(agg, 'Release')} disabled={isLoading}>Release Funds</button>
+                                            )}
+                                            {agg.status === 'Expired' && (
+                                                <p className="expired-message">This agreement has expired.</p>
                                             )}
                                         </div>
                                     </div>

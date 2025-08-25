@@ -24,7 +24,8 @@ body {
     border-radius: 12px;
     border: 1px solid #2d2d2d;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-    max-width: 450px;
+    width: 100%;
+    max-width: 800px;
 }
 
 .auth-box h1 {
@@ -32,8 +33,71 @@ body {
     margin-bottom: 16px;
 }
 
-.btn-connect {
+.auth-subtitle {
+    margin-bottom: 30px;
+    color: #aaa;
+}
+
+.auth-columns {
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+    margin-top: 20px;
+    text-align: center;
+}
+
+.auth-column {
+    flex: 1;
+    padding: 0 20px;
+}
+
+.auth-column h2 {
+    font-size: 1.2rem;
+    color: #e0e0e0;
+    margin-bottom: 8px;
+}
+
+.auth-column p {
+    font-size: 0.9rem;
+    color: #888;
+    margin-bottom: 24px;
+}
+
+.column-separator {
+    width: 1px;
+    background-color: #2d2d2d;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.btn-primary {
     background-color: #bb86fc;
+    color: #000;
+    border: none;
+    padding: 12px;
+    font-size: 1rem;
+    font-weight: bold;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-primary:disabled {
+    background-color: #444;
+    color: #888;
+    cursor: not-allowed;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: #a765f7;
+}
+
+.btn-connect {
+    background-color: #03dac6;
     color: #000;
     border: none;
     padding: 12px 24px;
@@ -42,11 +106,10 @@ body {
     border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.2s;
-    margin-top: 20px;
 }
 
 .btn-connect:hover {
-    background-color: #a765f7;
+    background-color: #02b8a8;
 }
 
 /* --- Main Application Layout --- */
@@ -100,16 +163,15 @@ body {
 
 .content-grid {
     display: grid;
-    grid-template-columns: 1fr; /* Default for mobile */
+    grid-template-columns: 1fr;
     gap: 24px;
 }
 
 @media (min-width: 992px) {
     .content-grid {
-        grid-template-columns: 1fr 2fr; /* 2 columns for larger screens */
+        grid-template-columns: 1fr 2fr;
     }
 }
-
 
 /* --- Reusable Card Component --- */
 .card {
@@ -150,7 +212,14 @@ body {
     color: #e0e0e0;
     border-radius: 6px;
     font-size: 1rem;
-    box-sizing: border-box; /* Important for consistent sizing */
+    box-sizing: border-box;
+}
+
+.form-group input:disabled {
+    background-color: #1a1a1a;
+    color: #888;
+    cursor: not-allowed;
+    border-style: dashed;
 }
 
 .amount-input-group {
@@ -182,11 +251,42 @@ body {
     cursor: not-allowed;
 }
 
+.role-selector {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    align-items: center;
+}
+.role-selector p {
+    margin-right: 10px;
+    font-size: 0.9rem;
+    color: #aaa;
+}
+.role-selector button {
+    flex-grow: 1;
+    padding: 8px 12px;
+    border: 1px solid #444;
+    background-color: #252525;
+    color: #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+.role-selector button:hover {
+    background-color: #333;
+}
+.role-selector button.active {
+    background-color: #bb86fc;
+    border-color: #bb86fc;
+    color: #000;
+    font-weight: bold;
+}
+
 /* --- Right Column Elements --- */
 .agreements-list {
     max-height: 70vh;
     overflow-y: auto;
-    padding-right: 10px; /* space for scrollbar */
+    padding-right: 10px;
 }
 
 .agreement-item {
@@ -195,11 +295,6 @@ body {
     border-radius: 8px;
     margin-bottom: 16px;
     border-left: 4px solid #bb86fc;
-    transition: transform 0.2s;
-}
-
-.agreement-item:hover {
-    transform: translateY(-2px);
 }
 
 .item-header {
@@ -219,6 +314,11 @@ body {
 .status-created { background-color: rgba(255, 165, 0, 0.2); color: orange; border: 1px solid orange;}
 .status-funded { background-color: rgba(3, 218, 198, 0.2); color: #03dac6; border: 1px solid #03dac6;}
 .status-released { background-color: rgba(76, 175, 80, 0.2); color: #4caf50; border: 1px solid #4caf50;}
+.status-expired {
+    background-color: rgba(255, 69, 58, 0.2);
+    color: #ff453a;
+    border: 1px solid #ff453a;
+}
 
 .item-details p {
     margin: 6px 0;
@@ -232,18 +332,15 @@ body {
     display: inline-block;
 }
 
-/* NEW STYLE for addresses */
 .address-mono {
     font-family: monospace;
     color: #ccc;
 }
 
-
 .item-actions {
     margin-top: 16px;
     text-align: right;
 }
-
 .item-actions button {
     background-color: #bb86fc;
     color: #000;
@@ -263,6 +360,27 @@ body {
     cursor: not-allowed;
 }
 
+.expired-message {
+    font-size: 0.9rem;
+    color: #ff453a;
+    margin: 0;
+    text-align: right;
+}
+.timer {
+    margin-top: 12px;
+    padding: 8px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    text-align: center;
+    font-size: 0.9rem;
+}
+.timer-text {
+    font-family: monospace;
+    color: #e0e0e0;
+}
+.timer-icon {
+    margin-right: 8px;
+}
 
 /* --- UI Messages --- */
 .ui-message {
@@ -280,122 +398,6 @@ body {
     color: #03dac6;
     word-wrap: break-word;
 }
-
-/* --- ADD TO YOUR EXISTING appln.css FILE --- */
-
-/* --- Auth Page Enhancements --- */
-.auth-box {
-    width: 100%;
-    max-width: 800px; /* Wider box for two columns */
-}
-
-.auth-subtitle {
-    margin-bottom: 30px;
-    color: #aaa;
-}
-
-.auth-columns {
-    display: flex;
-    flex-direction: row;
-    gap: 20px;
-    margin-top: 20px;
-    text-align: center;
-}
-
-.auth-column {
-    flex: 1;
-    padding: 0 20px;
-}
-
-.auth-column h2 {
-    font-size: 1.2rem;
-    color: #e0e0e0;
-    margin-bottom: 8px;
-}
-
-.auth-column p {
-    font-size: 0.9rem;
-    color: #888;
-    margin-bottom: 24px;
-}
-
-.column-separator {
-    width: 1px;
-    background-color: #2d2d2d;
-}
-
-.auth-form {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-/* A more generic primary button style */
-.btn-primary {
-    background-color: #bb86fc;
-    color: #000;
-    border: none;
-    padding: 12px;
-    font-size: 1rem;
-    font-weight: bold;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-.btn-primary:disabled {
-    background-color: #444;
-    color: #888;
-    cursor: not-allowed;
-}
-.btn-primary:hover:not(:disabled) {
-    background-color: #a765f7;
-}
-
-
-/* --- Role Selector in Create Form --- */
-.role-selector {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-    align-items: center;
-}
-
-.role-selector p {
-    margin-right: 10px;
-    font-size: 0.9rem;
-    color: #aaa;
-}
-
-.role-selector button {
-    flex-grow: 1;
-    padding: 8px 12px;
-    border: 1px solid #444;
-    background-color: #252525;
-    color: #e0e0e0;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
-}
-
-.role-selector button:hover {
-    background-color: #333;
-}
-
-.role-selector button.active {
-    background-color: #bb86fc;
-    border-color: #bb86fc;
-    color: #000;
-    font-weight: bold;
-}
-
-/* --- Input for disabled/readonly state --- */
-.form-group input:disabled {
-    background-color: #1a1a1a;
-    color: #888;
-    cursor: not-allowed;
-    border-style: dashed;
-}
-
 
 /* --- Responsive styles for Auth Page --- */
 @media (max-width: 768px) {

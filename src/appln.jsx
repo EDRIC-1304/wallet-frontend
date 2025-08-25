@@ -19,7 +19,7 @@ const ESCROW_BYTECODE = EscrowJson.bytecode;
 // --- Helper Functions ---
 const shortAddress = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
-// --- NEW: API Utility with JWT ---
+// --- API Utility with JWT ---
 const api = {
     get: (endpoint) => fetch(`${API_BASE_URL}${endpoint}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
@@ -51,16 +51,21 @@ function Appln() {
     const [usdt, setUsdt] = useState('0');
     const [usdc, setUsdc] = useState('0');
     const [agreements, setAgreements] = useState([]);
-    const [formState, setFormState] = useState({ arbiter: '', beneficiary: '', amount: '', token: 'USDT' });
+    const [formState, setFormState] = useState({
+        depositor: '',
+        arbiter: '',
+        beneficiary: '',
+        amount: '',
+        token: 'USDT'
+    });
     const [uiMessage, setUiMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-
-    // --- NEW: Authentication State ---
+    const [myRole, setMyRole] = useState('depositor');
     const [authState, setAuthState] = useState('LOGGED_OUT');
     const [authForm, setAuthForm] = useState({ identifier: '', password: '', username: '' });
     const [registrationAddress, setRegistrationAddress] = useState(null);
 
-    // --- Logout Function (clears JWT) ---
+    // --- Logout Function ---
     const logout = useCallback(() => {
         localStorage.removeItem('authToken');
         setAccount(null);
@@ -72,7 +77,7 @@ function Appln() {
         setUiMessage("You have been successfully logged out.");
     }, []);
 
-    // --- Data Fetching (now uses JWT) ---
+    // --- Data Fetching Functions ---
     const fetchAgreements = useCallback(async () => {
         if (!localStorage.getItem('authToken')) return;
         try {
@@ -83,7 +88,7 @@ function Appln() {
             }
             const data = await response.json();
             setAgreements(data);
-            setUiMessage(""); // Clear any previous error messages on success
+            setUiMessage("");
         } catch (error) {
             console.error(error);
             setUiMessage(`Error: Could not fetch agreements.`);
@@ -104,7 +109,7 @@ function Appln() {
         }
     }, []);
 
-    // --- NEW: Authentication Handlers ---
+    // --- Authentication Handlers ---
     const handleWalletConnect = async () => {
         if (typeof window.ethereum === "undefined") return setUiMessage("MetaMask not detected.");
         setIsLoading(true);
@@ -120,7 +125,7 @@ function Appln() {
             if (isRegistered) {
                 setUiMessage('Account found. Please log in with your password.');
                 setAuthState('LOGGED_OUT');
-                setAuthForm({ ...authForm, identifier: currentAddress });
+                setAuthForm({ ...authForm, identifier: currentAddress, password: '' });
             } else {
                 setUiMessage('New wallet detected. Please sign a message to prove ownership.');
                 const newSigner = await newProvider.getSigner();
@@ -193,7 +198,92 @@ function Appln() {
         }
     };
 
-    // --- Use Effects to manage state changes ---
+    // --- Escrow Core Functions ---
+    const createAgreement = async () => {
+        if (!signer || !account) return setUiMessage("Please connect wallet and sign in first.");
+        const { depositor, arbiter, beneficiary, amount, token } = formState;
+        if (!ethers.isAddress(depositor) || !ethers.isAddress(arbiter) || !ethers.isAddress(beneficiary) || !amount || parseFloat(amount) <= 0) {
+            return setUiMessage("Please fill all fields with valid addresses and a positive amount.");
+        }
+        setIsLoading(true);
+        setUiMessage("1/3: Deploying new escrow contract...");
+        try {
+            const tokenAddress = token === 'USDT' ? USDT_CONTRACT_ADDRESS : USDC_CONTRACT_ADDRESS;
+            const value = ethers.parseUnits(amount, 18);
+            
+            const EscrowFactory = new ethers.ContractFactory(ESCROW_ABI, ESCROW_BYTECODE, signer);
+            const escrowContract = await EscrowFactory.deploy(arbiter, beneficiary, depositor, tokenAddress, value);
+            await escrowContract.waitForDeployment();
+            
+            const contractAddress = await escrowContract.getAddress();
+            setUiMessage(`2/3: Contract deployed at ${shortAddress(contractAddress)}. Saving to database...`);
+            
+            const response = await api.post('/agreements', { contractAddress, depositor, arbiter, beneficiary, amount, token, tokenAddress });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to save agreement.");
+            }
+            
+            setUiMessage("3/3: Agreement created and saved successfully!");
+            setFormState({ depositor: '', arbiter: '', beneficiary: '', amount: '', token: 'USDT' });
+            setMyRole('depositor');
+            fetchAgreements();
+        } catch (error) {
+            const userFriendlyError = error.reason || error.message;
+            setUiMessage(`Error creating agreement: ${userFriendlyError}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleAction = async (agreement, action) => {
+        if (!signer) return setUiMessage("Signer not found. Please reconnect wallet.");
+        setIsLoading(true);
+        setUiMessage(`Processing action: ${action}...`);
+        try {
+            const escrowContract = new ethers.Contract(agreement.contractAddress, ESCROW_ABI, signer);
+            let tx;
+            if (action === "Fund") {
+                const tokenContract = new ethers.Contract(agreement.tokenAddress, TOKEN_ABI, signer);
+                const value = ethers.parseUnits(agreement.amount, 18);
+                setUiMessage("1/3: Checking token approval...");
+                const allowance = await tokenContract.allowance(account, agreement.contractAddress);
+                if (allowance < value) {
+                    setUiMessage("2/3: Approving token transfer...");
+                    const approveTx = await tokenContract.approve(agreement.contractAddress, value);
+                    await approveTx.wait();
+                    setUiMessage("Approval confirmed. Now funding escrow...");
+                } else {
+                    setUiMessage("2/3: Approval already granted. Funding escrow...");
+                }
+                tx = await escrowContract.fund();
+            } else if (action === "Release") {
+                setUiMessage("1/2: Releasing funds from escrow...");
+                tx = await escrowContract.release();
+            } else {
+                throw new Error("Invalid action");
+            }
+            
+            const nextStep = action === "Fund" ? "3/3" : "2/2";
+            setUiMessage(`${nextStep}: Transaction sent (${shortAddress(tx.hash)}). Waiting for confirmation...`);
+            await tx.wait();
+            
+            setUiMessage("Transaction confirmed! Updating status in database...");
+            const newStatus = action === "Fund" ? "Funded" : "Released";
+            const response = await api.put(`/agreements/${agreement.contractAddress}/status`, { status: newStatus });
+            if (!response.ok) throw new Error("Failed to update agreement status.");
+
+            setUiMessage(`Agreement successfully ${newStatus}!`);
+            fetchAgreements();
+        } catch (error) {
+            const userFriendlyError = error.reason || error.message;
+            setUiMessage(`Error during ${action}: ${userFriendlyError}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // --- Use Effects ---
     useEffect(() => {
         const token = localStorage.getItem('authToken');
         if (token) {
@@ -215,13 +305,20 @@ function Appln() {
             setProvider(newProvider);
             updateBalances(account, newProvider);
             fetchAgreements();
-            newProvider.getSigner().then(setSigner);
+            newProvider.getSigner().then(setSigner).catch(console.error);
         }
     }, [authState, account, updateBalances, fetchAgreements]);
 
-    // --- Escrow Core Functions (Updated to use JWT) ---
-    const createAgreement = async () => { /* ... Unchanged from your original code, but uses JWT via api.post ... */ };
-    const handleAction = async (agreement, action) => { /* ... Unchanged from your original code, but uses JWT via api.put ... */ };
+    useEffect(() => {
+        if (account) {
+            setFormState(prevState => ({
+                ...prevState,
+                depositor: myRole === 'depositor' ? account : '',
+                arbiter: myRole === 'arbiter' ? account : '',
+                beneficiary: myRole === 'beneficiary' ? account : '',
+            }));
+        }
+    }, [myRole, account]);
 
     // --- RENDER LOGIC ---
     if (authState !== 'LOGGED_IN') {
@@ -229,35 +326,40 @@ function Appln() {
             <div className="auth-container">
                 <div className="auth-box">
                     <h1>Escrow DApp</h1>
+                    <p className="auth-subtitle">Secure, decentralized agreements on the blockchain.</p>
                     {uiMessage && <p className="ui-message">{uiMessage}</p>}
-
-                    {authState === 'LOGGED_OUT' && (
-                        <>
-                            <p>Log in or connect a new wallet to begin.</p>
+                    <div className="auth-columns">
+                        <div className="auth-column">
+                            <h2>Returning User?</h2>
+                            <p>Log in with your credentials.</p>
                             <form onSubmit={handleLogin} className="auth-form">
                                 <input placeholder="Wallet Address or Username" value={authForm.identifier} onChange={(e) => setAuthForm({...authForm, identifier: e.target.value})} />
                                 <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({...authForm, password: e.target.value})} />
-                                <button type="submit" disabled={isLoading}>{isLoading ? 'Logging in...' : 'Login'}</button>
+                                <button type="submit" className="btn-primary" disabled={isLoading}>{isLoading ? 'Logging in...' : 'Login'}</button>
                             </form>
-                            <p className="separator">OR</p>
-                            <button onClick={handleWalletConnect} className="btn-connect" disabled={isLoading}>{isLoading ? "Connecting..." : "Connect & Register Wallet"}</button>
-                        </>
-                    )}
-
-                    {authState === 'REGISTERING' && (
-                         <form onSubmit={handleRegister} className="auth-form">
-                            <p>Registering for: <strong>{shortAddress(registrationAddress)}</strong></p>
-                            <input type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({...authForm, password: e.target.value})} required/>
-                            <input placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({...authForm, username: e.target.value})} />
-                            <button type="submit" disabled={isLoading}>{isLoading ? 'Creating Account...' : 'Create Account'}</button>
-                        </form>
-                    )}
+                        </div>
+                        <div className="column-separator"></div>
+                        <div className="auth-column">
+                            <h2>First Time Here?</h2>
+                            <p>Connect your wallet to start.</p>
+                            {authState === 'LOGGED_OUT' && (
+                                <button onClick={handleWalletConnect} className="btn-connect" disabled={isLoading}>{isLoading ? "Connecting..." : "Connect & Register Wallet"}</button>
+                            )}
+                            {authState === 'REGISTERING' && (
+                                <form onSubmit={handleRegister} className="auth-form">
+                                    <p>Registering for: <strong>{shortAddress(registrationAddress)}</strong></p>
+                                    <input type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({...authForm, password: e.target.value})} required/>
+                                    <input placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({...authForm, username: e.target.value})} />
+                                    <button type="submit" className="btn-primary" disabled={isLoading}>{isLoading ? 'Creating Account...' : 'Create Account'}</button>
+                                </form>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
         );
     }
     
-    // YOUR MAIN DASHBOARD - REMAINS IDENTICAL
     return (
         <div className="main-container">
             <header className="main-header">
@@ -279,9 +381,22 @@ function Appln() {
                     </div>
                     <div className="card">
                         <h3>Create New Escrow</h3>
+                        <div className="role-selector">
+                            <p>I am the:</p>
+                            <button className={myRole === 'depositor' ? 'active' : ''} onClick={() => setMyRole('depositor')}>Depositor</button>
+                            <button className={myRole === 'arbiter' ? 'active' : ''} onClick={() => setMyRole('arbiter')}>Arbiter</button>
+                            <button className={myRole === 'beneficiary' ? 'active' : ''} onClick={() => setMyRole('beneficiary')}>Beneficiary</button>
+                        </div>
                         <div className="form-group">
-                            <input placeholder="Arbiter Address" value={formState.arbiter} onChange={(e) => setFormState({...formState, arbiter: e.target.value})} />
-                            <input placeholder="Beneficiary Address (Recipient)" value={formState.beneficiary} onChange={(e) => setFormState({...formState, beneficiary: e.target.value})} />
+                            {myRole !== 'depositor' ? (
+                                <input placeholder="Depositor Address" value={formState.depositor} onChange={(e) => setFormState({...formState, depositor: e.target.value})} />
+                            ) : <input value={shortAddress(account)} readOnly disabled />}
+                            {myRole !== 'arbiter' ? (
+                                <input placeholder="Arbiter Address" value={formState.arbiter} onChange={(e) => setFormState({...formState, arbiter: e.target.value})} />
+                            ) : <input value={shortAddress(account)} readOnly disabled />}
+                            {myRole !== 'beneficiary' ? (
+                                <input placeholder="Beneficiary Address" value={formState.beneficiary} onChange={(e) => setFormState({...formState, beneficiary: e.target.value})} />
+                            ) : <input value={shortAddress(account)} readOnly disabled />}
                             <div className="amount-input-group">
                                 <input type="number" placeholder="Amount" value={formState.amount} onChange={(e) => setFormState({...formState, amount: e.target.value})} />
                                 <select value={formState.token} onChange={(e) => setFormState({...formState, token: e.target.value})}>
@@ -298,7 +413,7 @@ function Appln() {
                         <h3>Your Agreements</h3>
                         {uiMessage && <p className="ui-message-inline">{uiMessage}</p>}
                         <div className="agreements-list">
-                            {agreements.length === 0 ? <p>No agreements found for your address. Create one to get started!</p> :
+                            {agreements.length === 0 ? <p>No agreements found for your address.</p> :
                                 agreements.map(agg => (
                                     <div key={agg.contractAddress} className="agreement-item">
                                         <div className="item-header">
@@ -306,7 +421,6 @@ function Appln() {
                                             <span>{agg.amount} <strong>{agg.token}</strong></span>
                                         </div>
                                         <div className="item-details">
-                                            <p><strong>Contract:</strong> <span className="address-mono">{shortAddress(agg.contractAddress)}</span></p>
                                             <p><strong>Depositor:</strong> <span className="address-mono">{shortAddress(agg.depositor)}</span></p>
                                             <p><strong>Beneficiary:</strong> <span className="address-mono">{shortAddress(agg.beneficiary)}</span></p>
                                             <p><strong>Arbiter:</strong> <span className="address-mono">{shortAddress(agg.arbiter)}</span></p>

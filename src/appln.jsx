@@ -235,7 +235,7 @@ function Appln() {
     const [agreementsLoading, setAgreementsLoading] = useState(false);
     const [myRole, setMyRole] = useState('depositor');
     const [authState, setAuthState] = useState('LOGGED_OUT');
-    const [authForm, setAuthForm] = useState({ identifier: '', password: '', username: '' });
+    const [authForm, setAuthForm] = useState({ identifier: '', password: '', username: '', email: '' }); // ADDED 'email'
     const [registrationAddress, setRegistrationAddress] = useState(null);
 
     // --- Logout Function ---
@@ -333,6 +333,7 @@ function Appln() {
                     address: registrationAddress,
                     password: authForm.password,
                     username: authForm.username || undefined,
+                    email: authForm.email || undefined,
                 })
             });
             const data = await response.json();
@@ -549,7 +550,7 @@ function Appln() {
                                 <motion.h2 variants={itemVariant}>// Returning User</motion.h2>
                                 <motion.p variants={itemVariant}>Authenticate with existing credentials.</motion.p>
                                 <form onSubmit={handleLogin} className="auth-form">
-                                    <motion.input variants={itemVariant} placeholder="Wallet Address / Username" value={authForm.identifier} onChange={(e) => setAuthForm({ ...authForm, identifier: e.target.value })} />
+                                    <motion.input variants={itemVariant} placeholder="Wallet Address / Username / Email" value={authForm.identifier} onChange={(e) => setAuthForm({ ...authForm, identifier: e.target.value })} />
                                     <motion.input variants={itemVariant} type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
                                     <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
                                         {isLoading ? 'Authenticating...' : 'Login'}
@@ -569,6 +570,8 @@ function Appln() {
                                         <p className="register-address">Registering: <strong>{shortAddress(registrationAddress)}</strong></p>
                                         <motion.input variants={itemVariant} type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} required />
                                         <motion.input variants={itemVariant} placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
+                                                                                <motion.input variants={itemVariant} placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
+                                        <motion.input variants={itemVariant} type="email" placeholder="Email (Optional)" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} /> {/* ADD THIS EMAIL INPUT */}
                                         <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
                                             {isLoading ? 'Creating Account...' : 'Create Account'}
                                         </motion.button>

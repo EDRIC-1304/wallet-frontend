@@ -235,7 +235,15 @@ function Appln() {
     const [agreementsLoading, setAgreementsLoading] = useState(false);
     const [myRole, setMyRole] = useState('depositor');
     const [authState, setAuthState] = useState('LOGGED_OUT');
-    const [authForm, setAuthForm] = useState({ identifier: '', password: '', username: '', email: '' }); // ADDED 'email'
+        const [authForm, setAuthForm] = useState({
+        loginIdentifier: '', // This will hold the address, username, or email for login
+        loginPassword: '',
+        registerUsername: '', // For registration only
+        registerEmail: '',   // For registration only
+        registerPassword: '', // For registration only
+    });
+    // You might also want to adjust the setAuthForm in logout if needed,
+    // but the initial state above is the most important for the new fields.
     const [registrationAddress, setRegistrationAddress] = useState(null);
 
     // --- Logout Function ---
@@ -322,7 +330,7 @@ function Appln() {
 
     const handleRegister = async (e) => {
         e.preventDefault();
-        if (!authForm.password) return setUiMessage("Password is required.");
+        if (!authForm.registerPassword) return setUiMessage("Password is required for registration.");
         setIsLoading(true);
         setUiMessage("Encrypting and storing credentials...");
         try {
@@ -331,9 +339,9 @@ function Appln() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     address: registrationAddress,
-                    password: authForm.password,
-                    username: authForm.username || undefined,
-                    email: authForm.email || undefined,
+                    password: authForm.registerPassword, // Use the new registerPassword
+                    username: authForm.registerUsername || undefined, // Use registerUsername
+                    email: authForm.registerEmail || undefined,     // Use registerEmail
                 })
             });
             const data = await response.json();
@@ -343,6 +351,13 @@ function Appln() {
             setAccount(registrationAddress);
             setAuthState('LOGGED_IN');
             setUiMessage('');
+            // Clear registration specific fields after successful registration
+            setAuthForm(prev => ({
+                ...prev,
+                registerUsername: '',
+                registerEmail: '',
+                registerPassword: ''
+            }));
         } catch (error) {
             setUiMessage(`Registration failed: ${error.message}`);
         } finally {
@@ -359,8 +374,8 @@ function Appln() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    identifier: authForm.identifier,
-                    password: authForm.password,
+                    identifier: authForm.loginIdentifier, // Use the new loginIdentifier
+                    password: authForm.loginPassword,     // Use the new loginPassword
                 })
             });
             const data = await response.json();
@@ -550,12 +565,33 @@ function Appln() {
                                 <motion.h2 variants={itemVariant}>// Returning User</motion.h2>
                                 <motion.p variants={itemVariant}>Authenticate with existing credentials.</motion.p>
                                 <form onSubmit={handleLogin} className="auth-form">
-                                    <motion.input variants={itemVariant} placeholder="Wallet Address / Username / Email" value={authForm.identifier} onChange={(e) => setAuthForm({ ...authForm, identifier: e.target.value })} />
-                                    <motion.input variants={itemVariant} type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
+                                    <motion.input
+                                        variants={itemVariant}
+                                        placeholder="Wallet Address / Username / Email"
+                                        value={authForm.loginIdentifier}
+                                        onChange={(e) => setAuthForm({ ...authForm, loginIdentifier: e.target.value })}
+                                        required
+                                    />
+                                    <motion.input
+                                        variants={itemVariant}
+                                        type="password"
+                                        placeholder="Password"
+                                        value={authForm.loginPassword}
+                                        onChange={(e) => setAuthForm({ ...authForm, loginPassword: e.target.value })}
+                                        required
+                                    />
                                     <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
                                         {isLoading ? 'Authenticating...' : 'Login'}
                                     </motion.button>
                                 </form>
+                                <motion.button
+                                    className="btn-link"
+                                    onClick={logout} // Re-using your existing logout function
+                                    variants={itemVariant}
+                                    style={{ marginTop: '15px' }}
+                                >
+                                    Forgot password / Login as New User?
+                                </motion.button>
                             </motion.div>
                             <motion.div className="auth-column" variants={contentVariant}>
                                 <motion.h2 variants={itemVariant}>// New User</motion.h2>
@@ -568,10 +604,27 @@ function Appln() {
                                 {authState === 'REGISTERING' && (
                                     <form onSubmit={handleRegister} className="auth-form">
                                         <p className="register-address">Registering: <strong>{shortAddress(registrationAddress)}</strong></p>
-                                        <motion.input variants={itemVariant} type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} required />
-                                        <motion.input variants={itemVariant} placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
-                                                                                <motion.input variants={itemVariant} placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
-                                        <motion.input variants={itemVariant} type="email" placeholder="Email (Optional)" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} /> {/* ADD THIS EMAIL INPUT */}
+                                        <motion.input
+                                            variants={itemVariant}
+                                            type="password"
+                                            placeholder="Create Password"
+                                            value={authForm.registerPassword}
+                                            onChange={(e) => setAuthForm({ ...authForm, registerPassword: e.target.value })}
+                                            required
+                                        />
+                                        <motion.input
+                                            variants={itemVariant}
+                                            placeholder="Username (Optional)"
+                                            value={authForm.registerUsername}
+                                            onChange={(e) => setAuthForm({ ...authForm, registerUsername: e.target.value })}
+                                        />
+                                        <motion.input
+                                            variants={itemVariant}
+                                            type="email"
+                                            placeholder="Email (Optional)"
+                                            value={authForm.registerEmail}
+                                            onChange={(e) => setAuthForm({ ...authForm, registerEmail: e.target.value })}
+                                        />
                                         <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
                                             {isLoading ? 'Creating Account...' : 'Create Account'}
                                         </motion.button>

@@ -236,25 +236,34 @@ function Appln() {
     const [myRole, setMyRole] = useState('depositor');
     const [authState, setAuthState] = useState('LOGGED_OUT');
         const [authForm, setAuthForm] = useState({
-        loginIdentifier: '', // This will hold the address, username, or email for login
+        loginUsername: '',   // NEW: For login username
+        loginEmail: '',      // NEW: For login email
         loginPassword: '',
-        registerUsername: '', // For registration only
-        registerEmail: '',   // For registration only
-        registerPassword: '', // For registration only
+        registerUsername: '',
+        registerEmail: '',
+        registerPassword: '',
     });
     // You might also want to adjust the setAuthForm in logout if needed,
     // but the initial state above is the most important for the new fields.
     const [registrationAddress, setRegistrationAddress] = useState(null);
 
     // --- Logout Function ---
-    const logout = useCallback(() => {
+        const logout = useCallback(() => {
         localStorage.removeItem('authToken');
         setAccount(null);
         setProvider(null);
         setSigner(null);
         setAuthState('LOGGED_OUT');
         setAgreements([]);
-        setAuthForm({ identifier: '', password: '', username: '' });
+        // Clear all authForm fields to prepare for a fresh state
+        setAuthForm({
+            loginIdentifier: '',
+            loginPassword: '',
+            registerUsername: '',
+            registerEmail: '',
+            registerPassword: '',
+        });
+        setRegistrationAddress(null); // Also clear any pending registration address
         setUiMessage("User session terminated.");
     }, []);
 
@@ -374,8 +383,9 @@ function Appln() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    identifier: authForm.loginIdentifier, // Use the new loginIdentifier
-                    password: authForm.loginPassword,     // Use the new loginPassword
+                    username: authForm.loginUsername || undefined, // Send username if provided
+                    email: authForm.loginEmail || undefined,       // Send email if provided
+                    password: authForm.loginPassword,
                 })
             });
             const data = await response.json();
@@ -567,10 +577,16 @@ function Appln() {
                                 <form onSubmit={handleLogin} className="auth-form">
                                     <motion.input
                                         variants={itemVariant}
-                                        placeholder="Wallet Address / Username / Email"
-                                        value={authForm.loginIdentifier}
-                                        onChange={(e) => setAuthForm({ ...authForm, loginIdentifier: e.target.value })}
-                                        required
+                                        placeholder="Username (Optional)"
+                                        value={authForm.loginUsername}
+                                        onChange={(e) => setAuthForm({ ...authForm, loginUsername: e.target.value })}
+                                    />
+                                    <motion.input
+                                        variants={itemVariant}
+                                        type="email"
+                                        placeholder="Email (Optional)"
+                                        value={authForm.loginEmail}
+                                        onChange={(e) => setAuthForm({ ...authForm, loginEmail: e.target.value })}
                                     />
                                     <motion.input
                                         variants={itemVariant}
@@ -586,11 +602,15 @@ function Appln() {
                                 </form>
                                 <motion.button
                                     className="btn-link"
-                                    onClick={logout} // Re-using your existing logout function
+                                    onClick={() => {
+                                        logout(); // Clear current session
+                                        setAuthState('LOGGED_OUT'); // Ensure state is LOGGED_OUT to show 'Connect & Register Wallet'
+                                        setUiMessage("Session cleared. Connect wallet to register a new account.");
+                                    }}
                                     variants={itemVariant}
                                     style={{ marginTop: '15px' }}
                                 >
-                                    Forgot password / Login as New User?
+                                    Forgot password / Register New Account
                                 </motion.button>
                             </motion.div>
                             <motion.div className="auth-column" variants={contentVariant}>

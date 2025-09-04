@@ -830,9 +830,9 @@ useEffect(() => {
                                         <option value="USDC">USDC</option>
                                     </select>
                                 </div>
-                                <button onClick={createAgreement} disabled={isLoading} className="btn btn-primary">
-                                    {isLoading ? 'Creating...' : 'Create Agreement'}
-                                </button>
+                            <button onClick={createAgreement} disabled={isLoading || !signer} className="btn btn-primary">
+                            {isLoading || !signer ? 'Initializing...' : 'Create Agreement'}
+                            </button>
                             </div>
                         </motion.div>
                     </motion.div>

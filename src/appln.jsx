@@ -250,16 +250,49 @@ function Appln() {
         setUiMessage("User session terminated.");
     }, []);
 
-        // --- Disconnect Wallet Function ---
-    const disconnectWallet = useCallback(() => {
-        setProvider(null);
-        setSigner(null);
-        setAccount(null);
-        setAuthState('LOGGED_OUT');
-        setAuthForm({ identifier: '', password: '', username: '', email: '' });
-        setRegistrationAddress(null); // Clear any pending registration address
-        setUiMessage("Wallet connection cleared. Ready to connect a new wallet.");
+    // --- Disconnect Wallet Function ---
+    // This function will handle clearing the app's internal state and attempting MetaMask permission revocation
+    const disconnectWallet = useCallback(async () => {
+        setUiMessage("Disconnecting MetaMask...");
+        try {
+            // Attempt to revoke permissions for eth_accounts in MetaMask
+            // This might open a MetaMask popup for user confirmation
+            if (window.ethereum && window.ethereum.request) {
+                await window.ethereum.request({
+                    method: 'wallet_revokePermissions',
+                    params: [{ eth_accounts: {} }],
+                });
+            }
+            
+            // Clear all local storage relevant to this app's session
+            // Using clear() is fine for development, but for production, you might want specific removeItem() calls
+            localStorage.clear(); 
+            
+            // Reset all relevant state in your React app
+            setAccount(null);
+            setProvider(null);
+            setSigner(null);
+            setAuthState('LOGGED_OUT');
+            setAgreements([]);
+            setAuthForm({ identifier: '', password: '', username: '', email: '' });
+            setRegistrationAddress(null); // Clear any pending registration address
+            setUiMessage("MetaMask disconnected. You can now connect as a new user.");
+        } catch (error) {
+            console.error("Error disconnecting MetaMask:", error);
+            // Inform user if there was an issue, but still clear local state
+            setUiMessage("Failed to fully disconnect MetaMask. Please try manually in MetaMask if issues persist. Local session cleared.");
+        } finally {
+            // Ensure UI state is reset even if MetaMask interaction failed
+            setAccount(null);
+            setProvider(null);
+            setSigner(null);
+            setAuthState('LOGGED_OUT');
+            setAgreements([]);
+            setAuthForm({ identifier: '', password: '', username: '', email: '' });
+            setRegistrationAddress(null);
+        }
     }, []);
+
 
     // --- Data Fetching Functions ---
     const fetchAgreements = useCallback(async () => {
@@ -567,19 +600,15 @@ function Appln() {
                                         {isLoading ? 'Authenticating...' : 'Login'}
                                     </motion.button>
                                 </form>
-                                {/* ADD THIS BUTTON HERE */}
-                        {account && ( // Only show if an account is currently "connected" in the app's state
-                            <motion.button 
-                                onClick={disconnectWallet} 
-                                className="btn btn-tertiary disconnect-btn" // You might need to define .btn-tertiary and .disconnect-btn in your CSS
-                                disabled={isLoading} 
-                                variants={itemVariant}
-                            >
-                                Disconnect Wallet
-                            </motion.button>
-                        )}
-                    </motion.div>
-                    <motion.div className="auth-column" variants={contentVariant}>
+                                {/* NEW DISCONNECT BUTTON HERE */}
+                                <motion.button 
+                                    onClick={disconnectWallet} 
+                                    className="btn btn-tertiary" 
+                                    disabled={isLoading} 
+                                    variants={itemVariant}
+                                >
+                                    Disconnect MetaMask
+                                </motion.button>
                             </motion.div>
                             <motion.div className="auth-column" variants={contentVariant}>
                                 <motion.h2 variants={itemVariant}>// New User</motion.h2>

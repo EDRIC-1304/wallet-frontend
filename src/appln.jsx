@@ -118,6 +118,8 @@ const CanvasBackground = () => {
 };
 
 
+
+
 // --- Reusable Timer Component ---
 const AgreementTimer = ({ deadline, status }) => {
     const calculateTimeLeft = useCallback(() => {
@@ -211,6 +213,45 @@ const Toast = ({ message, onClose }) => {
             )}
         </AnimatePresence>
     );
+};
+
+/ --- NEW: Smart Error Parsing Helper Function ---
+const parseBlockchainError = (error, action) => {
+    // Log the full original error to the console for debugging purposes
+    console.error("Original Blockchain Error:", error);
+
+    // --- Most Common & Reliable Checks First ---
+
+    // 1. Check for specific Ethers.js error codes
+    if (error.code === 'INSUFFICIENT_FUNDS') {
+        return "Insufficient native currency (like BNB or ETH) to pay for the transaction gas fee.";
+    }
+
+    // 2. Check for common reasons provided by contracts (like ERC20 tokens)
+    const reason = (error.reason || "").toLowerCase();
+    if (reason.includes("insufficient balance") || reason.includes("transfer amount exceeds balance")) {
+        return `Insufficient token balance to ${action}. Please ensure you have enough tokens in your wallet.`;
+    }
+    if (reason.includes("expired")) {
+        return "This agreement's funding period has expired and it can no longer be funded.";
+    }
+
+    // --- Fallback Checks on the General Message ---
+
+    // 3. Check for user rejecting the transaction in their wallet
+    const errorMessage = (error.message || "").toLowerCase();
+    if (errorMessage.includes("user rejected") || errorMessage.includes("action rejected")) {
+        return "Transaction was cancelled in your wallet.";
+    }
+
+    // 4. A more generic check for insufficient funds (catches different phrasings)
+    if (errorMessage.includes("insufficient funds")) {
+        return "Your wallet has insufficient funds for this transaction (either for the tokens or for the gas fee).";
+    }
+
+    // --- Default Fallback Message ---
+    // If none of the above matched, show a generic but still helpful message.
+    return `The transaction failed. The contract reverted the action. Please check your balance and try again.`;
 };
 
 function Appln() {
@@ -546,8 +587,8 @@ const handleResetPassword = async (e) => {
         setUiMessage(`Agreement successfully ${newStatus}!`);
         fetchAgreements();
     } catch (error) {
-        const userFriendlyError = error.reason || error.message;
-        setUiMessage(`Error during ${action}: ${userFriendlyError}`);
+         const userFriendlyError = parseBlockchainError(error, action);
+        setUiMessage(userFriendlyError);
     } finally {
         setIsLoading(false);
     }

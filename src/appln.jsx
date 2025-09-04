@@ -215,7 +215,6 @@ const Toast = ({ message, onClose }) => {
     );
 };
 
-/ --- NEW: Smart Error Parsing Helper Function ---
 const parseBlockchainError = (error, action) => {
     // Log the full original error to the console for debugging purposes
     console.error("Original Blockchain Error:", error);

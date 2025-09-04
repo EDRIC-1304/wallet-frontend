@@ -570,3 +570,34 @@ input:disabled {
   margin-top: 20px; /* Add some spacing above the button */
   width: 100%; /* Make it full width like other form buttons */
 }
+
+/* --- Add these styles to appln.css --- */
+
+.tx-hash-container {
+    margin-top: 12px;
+    align-items: center;
+    font-size: 0.9rem;
+    padding: 6px 10px !important;
+    justify-content: flex-start !important;
+}
+
+.tx-hash-container .hash-text {
+    flex-grow: 1; /* Allows the text to take up available space */
+    color: var(--color-text);
+}
+
+.btn-copy {
+    background: transparent;
+    border: none;
+    color: var(--color-text-dark);
+    cursor: pointer;
+    font-family: var(--font-primary);
+    font-size: 0.85rem;
+    padding: 4px 8px;
+    transition: color 0.2s, text-shadow 0.2s;
+}
+
+.btn-copy:hover {
+    color: var(--color-primary);
+    text-shadow: 0 0 5px var(--color-primary);
+}

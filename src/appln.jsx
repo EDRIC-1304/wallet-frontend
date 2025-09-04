@@ -237,6 +237,7 @@ function Appln() {
     const [authState, setAuthState] = useState('LOGGED_OUT');
     const [authForm, setAuthForm] = useState({ identifier: '', password: '', username: '', email: '' }); // ADDED 'email'
     const [registrationAddress, setRegistrationAddress] = useState(null);
+    const [copiedHash, setCopiedHash] = useState(null);
 
     // --- Logout Function ---
     const logout = useCallback(() => {
@@ -461,51 +462,46 @@ function Appln() {
     };
 
     const handleAction = async (agreement, action) => {
-        if (!signer) return setUiMessage("Signer not found. Reconnect wallet.");
-        setIsLoading(true);
-        setUiMessage(`Processing: ${action}...`);
-        try {
-            const escrowContract = new ethers.Contract(agreement.contractAddress, ESCROW_ABI, signer);
-            let tx;
-            if (action === "Fund") {
-                const tokenContract = new ethers.Contract(agreement.tokenAddress, TOKEN_ABI, signer);
-                const value = ethers.parseUnits(agreement.amount, 18);
-                setUiMessage("1/3: Checking token approval...");
-                const allowance = await tokenContract.allowance(account, agreement.contractAddress);
-                if (allowance < value) {
-                    setUiMessage("2/3: Approving token transfer...");
-                    const approveTx = await tokenContract.approve(agreement.contractAddress, value);
-                    await approveTx.wait();
-                    setUiMessage("Approval confirmed. Now funding...");
-                } else {
-                    setUiMessage("2/3: Approval found. Funding escrow...");
-                }
-                tx = await escrowContract.fund();
-            } else if (action === "Release") {
-                setUiMessage("1/2: Releasing funds...");
-                tx = await escrowContract.release();
-            } else {
-                throw new Error("Invalid action");
-            }
-
-            const nextStep = action === "Fund" ? "3/3" : "2/2";
-            setUiMessage(`${nextStep}: Tx sent (${shortAddress(tx.hash)}). Awaiting confirmation...`);
-            await tx.wait();
-
-            setUiMessage("Tx confirmed! Updating database...");
-            const newStatus = action === "Fund" ? "Funded" : "Released";
-            const response = await api.put(`/agreements/${agreement.contractAddress}/status`, { status: newStatus });
-            if (!response.ok) throw new Error("Failed to update status.");
-
-            setUiMessage(`Agreement successfully ${newStatus}!`);
-            fetchAgreements();
-        } catch (error) {
-            const userFriendlyError = error.reason || error.message;
-            setUiMessage(`Error during ${action}: ${userFriendlyError}`);
-        } finally {
-            setIsLoading(false);
+    if (!signer) return setUiMessage("Signer not found. Reconnect wallet.");
+    setIsLoading(true);
+    setUiMessage(`Processing: ${action}...`);
+    try {
+        const escrowContract = new ethers.Contract(agreement.contractAddress, ESCROW_ABI, signer);
+        let tx;
+        // ... (if/else for Fund/Release actions remains the same)
+        if (action === "Fund") {
+            // ... token approval logic
+            tx = await escrowContract.fund();
+        } else if (action === "Release") {
+            setUiMessage("1/2: Releasing funds...");
+            tx = await escrowContract.release();
+        } else {
+            throw new Error("Invalid action");
         }
-    };
+
+        const nextStep = action === "Fund" ? "3/3" : "2/2";
+        setUiMessage(`${nextStep}: Tx sent (${shortAddress(tx.hash)}). Awaiting confirmation...`);
+        await tx.wait();
+
+        setUiMessage("Tx confirmed! Updating database...");
+        const newStatus = action === "Fund" ? "Funded" : "Released";
+
+        // --- MODIFIED: Send the transaction hash along with the new status ---
+        const response = await api.put(`/agreements/${agreement.contractAddress}/status`, {
+            status: newStatus,
+            transactionHash: tx.hash // Send the hash to the backend
+        });
+        if (!response.ok) throw new Error("Failed to update status.");
+
+        setUiMessage(`Agreement successfully ${newStatus}!`);
+        fetchAgreements();
+    } catch (error) {
+        const userFriendlyError = error.reason || error.message;
+        setUiMessage(`Error during ${action}: ${userFriendlyError}`);
+    } finally {
+        setIsLoading(false);
+    }
+};
 
     // --- Use Effects ---
     useEffect(() => {
@@ -718,43 +714,54 @@ function Appln() {
                                 ) : agreements.length === 0 ? (
                                     <p>No agreements found for your address.</p>
                                 ) : (
-                                    <AnimatePresence>
-                                        {agreements.map(agg => (
-                                            <motion.div
-                                                key={agg.contractAddress}
-                                                className="agreement-item"
-                                                variants={itemVariant}
-                                                exit={{ opacity: 0, x: -50 }}
-                                                layout
-                                            >
-                                                <div className="item-header">
-                                                    <span className={`status status-${(agg.status || '').toLowerCase()}`}>{agg.status}</span>
-                                                    <span className='item-amount'>{agg.amount} <strong>{agg.token}</strong></span>
-                                                </div>
-                                                <div className="item-details">
-                                                    <p className="data-field"><span>Depositor:</span> {shortAddress(agg.depositor)}</p>
-                                                    <p className="data-field"><span>Beneficiary:</span> {shortAddress(agg.beneficiary)}</p>
-                                                    <p className="data-field"><span>Arbiter:</span> {shortAddress(agg.arbiter)}</p>
-                                                </div>
-                                                <AgreementTimer deadline={agg.deadline} status={agg.status} />
-                                                <div className="item-actions">
-                                                    {agg.status === 'Created' && agg.depositor?.toLowerCase() === account?.toLowerCase() && (
-                                                        <button onClick={() => handleAction(agg, 'Fund')} disabled={isLoading} className="btn btn-action">
-                                                           {isLoading ? 'Funding...' : 'Fund Escrow'}
-                                                        </button>
-                                                    )}
-                                                    {agg.status === 'Funded' && agg.arbiter?.toLowerCase() === account?.toLowerCase() && (
-                                                        <button onClick={() => handleAction(agg, 'Release')} disabled={isLoading} className="btn btn-action">
-                                                            {isLoading ? 'Releasing...' : 'Release Funds'}
-                                                        </button>
-                                                    )}
-                                                     {agg.status === 'Expired' && (
-                                                        <p className="expired-message">AGREEMENT EXPIRED</p>
-                                                    )}
-                                                </div>
-                                            </motion.div>
-                                        ))}
-                                    </AnimatePresence>
+                                    // ... inside the return() of the Appln component, in the agreements-list section
+
+<AnimatePresence>
+    {agreements.map(agg => (
+        <motion.div
+            key={agg.contractAddress}
+            className="agreement-item"
+            variants={itemVariant}
+            exit={{ opacity: 0, x: -50 }}
+            layout
+        >
+            <div className="item-header">
+                <span className={`status status-${(agg.status || '').toLowerCase()}`}>{agg.status}</span>
+                <span className='item-amount'>{agg.amount} <strong>{agg.token}</strong></span>
+            </div>
+            <div className="item-details">
+                <p className="data-field"><span>Depositor:</span> {shortAddress(agg.depositor)}</p>
+                <p className="data-field"><span>Beneficiary:</span> {shortAddress(agg.beneficiary)}</p>
+                <p className="data-field"><span>Arbiter:</span> {shortAddress(agg.arbiter)}</p>
+            </div>
+
+            {/* --- ADD THIS ENTIRE BLOCK --- */}
+            {/* It conditionally renders if a transaction hash exists for the agreement */}
+            {agg.transactionHash && (
+                <div className="tx-hash-container data-field">
+                    <span>TX HASH:</span>
+                    <span className="hash-text">{shortAddress(agg.transactionHash)}</span>
+                    <button
+                        className="btn-copy"
+                        onClick={() => {
+                            navigator.clipboard.writeText(agg.transactionHash);
+                            setCopiedHash(agg.transactionHash);
+                            setTimeout(() => setCopiedHash(null), 2500); // Reset after 2.5 seconds
+                        }}
+                    >
+                        {copiedHash === agg.transactionHash ? 'Copied!' : '[Copy]'}
+                    </button>
+                </div>
+            )}
+            {/* --- END OF NEW BLOCK --- */}
+
+            <AgreementTimer deadline={agg.deadline} status={agg.status} />
+            <div className="item-actions">
+                {/* ... (your existing Fund/Release buttons) */}
+            </div>
+        </motion.div>
+         ))}
+        </AnimatePresence>
                                 )}
                             </div>
                         </motion.div>

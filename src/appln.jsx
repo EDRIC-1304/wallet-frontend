@@ -621,16 +621,20 @@ const handleResetPassword = async (e) => {
         }
     }, [authState, account, updateBalances, fetchAgreements]);
 
-    useEffect(() => {
-        if (account) {
-            setFormState(prevState => ({
-                ...prevState,
-                depositor: myRole === 'depositor' ? account : '',
-                arbiter: myRole === 'arbiter' ? account : '',
-                beneficiary: myRole === 'beneficiary' ? account : '',
-            }));
-        }
-    }, [myRole, account]);
+    // REPLACE THE OLD BLOCK WITH THIS CORRECTED VERSION
+useEffect(() => {
+    if (account) {
+        // Use ethers.getAddress() to ensure the address is in the correct checksum format
+        const checksumAddress = ethers.getAddress(account);
+        setFormState(prevState => ({
+            ...prevState,
+            // When setting the user's own address, use the properly formatted version
+            depositor: myRole === 'depositor' ? checksumAddress : '',
+            arbiter: myRole === 'arbiter' ? checksumAddress : '',
+            beneficiary: myRole === 'beneficiary' ? checksumAddress : '',
+        }));
+    }
+}, [myRole, account]);
 
     const uiToastClose = useCallback(() => {
         if (!isLoading) setUiMessage('');

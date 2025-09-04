@@ -811,48 +811,65 @@ const handleResetPassword = async (e) => {
 
 <AnimatePresence>
     {agreements.map(agg => (
-        <motion.div
-            key={agg.contractAddress}
-            className="agreement-item"
-            variants={itemVariant}
-            exit={{ opacity: 0, x: -50 }}
-            layout
-        >
-            <div className="item-header">
-                <span className={`status status-${(agg.status || '').toLowerCase()}`}>{agg.status}</span>
-                <span className='item-amount'>{agg.amount} <strong>{agg.token}</strong></span>
-            </div>
-            <div className="item-details">
-                <p className="data-field"><span>Depositor:</span> {shortAddress(agg.depositor)}</p>
-                <p className="data-field"><span>Beneficiary:</span> {shortAddress(agg.beneficiary)}</p>
-                <p className="data-field"><span>Arbiter:</span> {shortAddress(agg.arbiter)}</p>
-            </div>
+        // PASTE THIS ENTIRE BLOCK OF CODE EXACTLY WHERE THE OLD BLOCK WAS
+(
+    <motion.div
+        key={agg.contractAddress}
+        className="agreement-item"
+        variants={itemVariant}
+        exit={{ opacity: 0, x: -50 }}
+        layout
+    >
+        <div className="item-header">
+            <span className={`status status-${(agg.status || '').toLowerCase()}`}>{agg.status}</span>
+            <span className='item-amount'>{agg.amount} <strong>{agg.token}</strong></span>
+        </div>
+        <div className="item-details">
+            <p className="data-field"><span>Depositor:</span> {shortAddress(agg.depositor)}</p>
+            <p className="data-field"><span>Beneficiary:</span> {shortAddress(agg.beneficiary)}</p>
+            <p className="data-field"><span>Arbiter:</span> {shortAddress(agg.arbiter)}</p>
+        </div>
 
-            {/* --- ADD THIS ENTIRE BLOCK --- */}
-            {/* It conditionally renders if a transaction hash exists for the agreement */}
-            {agg.transactionHash && (
-                <div className="tx-hash-container data-field">
-                    <span>TX HASH:</span>
-                    <span className="hash-text">{shortAddress(agg.transactionHash)}</span>
-                    <button
-                        className="btn-copy"
-                        onClick={() => {
-                            navigator.clipboard.writeText(agg.transactionHash);
-                            setCopiedHash(agg.transactionHash);
-                            setTimeout(() => setCopiedHash(null), 2500); // Reset after 2.5 seconds
-                        }}
-                    >
-                        {copiedHash === agg.transactionHash ? 'Copied!' : '[Copy]'}
-                    </button>
-                </div>
+        {/* --- NEW: DISPLAYS THE TRANSACTION HASH AND COPY BUTTON (IF IT EXISTS) --- */}
+        {agg.transactionHash && (
+            <div className="tx-hash-container data-field">
+                <span>TX HASH:</span>
+                <span className="hash-text">{shortAddress(agg.transactionHash)}</span>
+                <button
+                    className="btn-copy"
+                    onClick={() => {
+                        navigator.clipboard.writeText(agg.transactionHash);
+                        setCopiedHash(agg.transactionHash);
+                        setTimeout(() => setCopiedHash(null), 2500);
+                    }}
+                >
+                    {copiedHash === agg.transactionHash ? 'Copied!' : '[Copy]'}
+                </button>
+            </div>
+        )}
+
+        <AgreementTimer deadline={agg.deadline} status={agg.status} />
+
+        {/* --- CORRECTED: DISPLAYS ACTION BUTTONS BASED ON ROLE AND STATUS --- */}
+        <div className="item-actions">
+            {/* Button for Depositor to Fund the Escrow */}
+            {agg.status === 'Created' && agg.depositor?.toLowerCase() === account?.toLowerCase() && (
+                <button onClick={() => handleAction(agg, 'Fund')} disabled={isLoading} className="btn btn-action">
+                   {isLoading ? 'Funding...' : 'Fund Escrow'}
+                </button>
             )}
-            {/* --- END OF NEW BLOCK --- */}
-
-            <AgreementTimer deadline={agg.deadline} status={agg.status} />
-            <div className="item-actions">
-                {/* ... (your existing Fund/Release buttons) */}
-            </div>
-        </motion.div>
+            {/* Button for Arbiter to Release the Funds */}
+            {agg.status === 'Funded' && agg.arbiter?.toLowerCase() === account?.toLowerCase() && (
+                <button onClick={() => handleAction(agg, 'Release')} disabled={isLoading} className="btn btn-action">
+                    {isLoading ? 'Releasing...' : 'Release Funds'}
+                </button>
+            )}
+             {agg.status === 'Expired' && (
+                <p className="expired-message">AGREEMENT EXPIRED</p>
+            )}
+        </div>
+    </motion.div>
+)
          ))}
         </AnimatePresence>
                                 )}

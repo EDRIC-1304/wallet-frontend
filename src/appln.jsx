@@ -250,6 +250,17 @@ function Appln() {
         setUiMessage("User session terminated.");
     }, []);
 
+        // --- Disconnect Wallet Function ---
+    const disconnectWallet = useCallback(() => {
+        setProvider(null);
+        setSigner(null);
+        setAccount(null);
+        setAuthState('LOGGED_OUT');
+        setAuthForm({ identifier: '', password: '', username: '', email: '' });
+        setRegistrationAddress(null); // Clear any pending registration address
+        setUiMessage("Wallet connection cleared. Ready to connect a new wallet.");
+    }, []);
+
     // --- Data Fetching Functions ---
     const fetchAgreements = useCallback(async () => {
         if (!localStorage.getItem('authToken')) return;
@@ -556,21 +567,36 @@ function Appln() {
                                         {isLoading ? 'Authenticating...' : 'Login'}
                                     </motion.button>
                                 </form>
+                                {/* ---- INSERT THE NEW BUTTON HERE ---- */}
+                                {/* The 'account' check ensures it only shows if there's a wallet address
+                                    already known to the app (even if not fully logged in via password) */}
+                                {account && (
+                                    <motion.button
+                                        onClick={disconnectWallet}
+                                        className="btn btn-tertiary disconnect-btn"
+                                        disabled={isLoading}
+                                        variants={itemVariant}
+                                    >
+                                        Disconnect Wallet
+                                    </motion.button>
+                                )}
+                                {/* ---- END OF NEW BUTTON INSERTION ---- */}
                             </motion.div>
                             <motion.div className="auth-column" variants={contentVariant}>
                                 <motion.h2 variants={itemVariant}>// New User</motion.h2>
                                 <motion.p variants={itemVariant}>Connect wallet to register.</motion.p>
+                                {/* ... (rest of your New User section) */}
                                 {authState === 'LOGGED_OUT' && (
                                     <motion.button onClick={handleWalletConnect} className="btn btn-secondary" disabled={isLoading} variants={itemVariant}>
                                         {isLoading ? 'Connecting...' : 'Connect & Register Wallet'}
                                     </motion.button>
                                 )}
+                                {/* ... (rest of registration form if authState === 'REGISTERING') */}
                                 {authState === 'REGISTERING' && (
                                     <form onSubmit={handleRegister} className="auth-form">
                                         <p className="register-address">Registering: <strong>{shortAddress(registrationAddress)}</strong></p>
                                         <motion.input variants={itemVariant} type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} required />
                                         <motion.input variants={itemVariant} placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
-                                                                                <motion.input variants={itemVariant} placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
                                         <motion.input variants={itemVariant} type="email" placeholder="Email (Optional)" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} /> {/* ADD THIS EMAIL INPUT */}
                                         <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
                                             {isLoading ? 'Creating Account...' : 'Create Account'}

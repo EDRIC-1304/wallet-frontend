@@ -235,9 +235,10 @@ function Appln() {
     const [agreementsLoading, setAgreementsLoading] = useState(false);
     const [myRole, setMyRole] = useState('depositor');
     const [authState, setAuthState] = useState('LOGGED_OUT');
-    const [authForm, setAuthForm] = useState({ identifier: '', password: '', username: '', email: '' }); // ADDED 'email'
+    const [authForm, setAuthForm] = useState({ identifier: '', password: '', username: '', email: '', newPassword: '' }); // ADD 'newPassword'
     const [registrationAddress, setRegistrationAddress] = useState(null);
     const [copiedHash, setCopiedHash] = useState(null);
+    
 
     // --- Logout Function ---
     const logout = useCallback(() => {
@@ -423,6 +424,55 @@ function Appln() {
         }
     };
 
+    // Place this function near your other auth handlers (handleLogin, handleRegister)
+
+const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!authForm.newPassword) return setUiMessage("Please enter a new password.");
+    if (!signer) {
+        // This is a fallback in case the signer isn't ready
+        const newProvider = new ethers.BrowserProvider(window.ethereum);
+        const newSigner = await newProvider.getSigner();
+        setSigner(newSigner);
+    }
+
+    setIsLoading(true);
+    setUiMessage("Awaiting signature to verify ownership...");
+
+    try {
+        // 1. Prove ownership by signing a message
+        const addressToReset = authForm.identifier;
+        const signature = await signer.signMessage(`Reset password for Escrow DApp: ${addressToReset}`);
+        if (!signature) throw new Error("Signature was cancelled.");
+
+        setUiMessage("Signature verified. Resetting password...");
+
+        // 2. Call the new backend endpoint
+        const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                address: addressToReset,
+                newPassword: authForm.newPassword,
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Failed to reset password.");
+
+        // 3. Success: Reset the UI back to the login screen
+        setUiMessage("Password reset successfully! Please log in with your new password.");
+        setAuthState('LOGGED_OUT'); // This will hide the reset form
+        // Clear the new password field but keep the identifier for convenience
+        setAuthForm({ ...authForm, password: '', newPassword: '' });
+
+    } catch (error) {
+        setUiMessage(`Reset failed: ${error.message}`);
+    } finally {
+        setIsLoading(false);
+    }
+};
+
     // --- Escrow Core Functions ---
     const createAgreement = async () => {
         if (!signer || !account) return setUiMessage("Connect wallet and sign in first.");
@@ -585,49 +635,92 @@ function Appln() {
                         <motion.p className="auth-subtitle" variants={itemVariant}>Secure P2P agreements on the blockchain.</motion.p>
                         {uiMessage && <p className="ui-message glitch" data-text={uiMessage}>{uiMessage}</p>}
 
-                        <div className="auth-columns">
-                            <motion.div className="auth-column" variants={contentVariant}>
-                                <motion.h2 variants={itemVariant}>// Returning User</motion.h2>
-                                <motion.p variants={itemVariant}>Authenticate with existing credentials.</motion.p>
-                                <form onSubmit={handleLogin} className="auth-form">
-                                    <motion.input variants={itemVariant} placeholder="Wallet Address / Username / Email" value={authForm.identifier} onChange={(e) => setAuthForm({ ...authForm, identifier: e.target.value })} />
-                                    <motion.input variants={itemVariant} type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
-                                    <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
-                                        {isLoading ? 'Authenticating...' : 'Login'}
-                                    </motion.button>
-                                </form>
-                                {/* NEW DISCONNECT BUTTON HERE */}
-                                <motion.button 
-                                    onClick={disconnectWallet} 
-                                    className="btn btn-tertiary" 
-                                    disabled={isLoading} 
-                                    variants={itemVariant}
-                                >
-                                    Disconnect MetaMask
-                                </motion.button>
-                            </motion.div>
-                            <motion.div className="auth-column" variants={contentVariant}>
-                                <motion.h2 variants={itemVariant}>// New User</motion.h2>
-                                <motion.p variants={itemVariant}>Connect wallet to register.</motion.p>
-                                {authState === 'LOGGED_OUT' && (
-                                    <motion.button onClick={handleWalletConnect} className="btn btn-secondary" disabled={isLoading} variants={itemVariant}>
-                                        {isLoading ? 'Connecting...' : 'Connect & Register Wallet'}
-                                    </motion.button>
-                                )}
-                                {authState === 'REGISTERING' && (
-                                    <form onSubmit={handleRegister} className="auth-form">
-                                        <p className="register-address">Registering: <strong>{shortAddress(registrationAddress)}</strong></p>
-                                        <motion.input variants={itemVariant} type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} required />
-                                        <motion.input variants={itemVariant} placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
-                                                                                <motion.input variants={itemVariant} placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
-                                        <motion.input variants={itemVariant} type="email" placeholder="Email (Optional)" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} /> {/* ADD THIS EMAIL INPUT */}
-                                        <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
-                                            {isLoading ? 'Creating Account...' : 'Create Account'}
-                                        </motion.button>
-                                    </form>
-                                )}
-                            </motion.div>
-                        </div>
+                    {/* PASTE THIS ENTIRE CORRECTED BLOCK IN ITS PLACE */}
+<div className="auth-columns">
+    <motion.div className="auth-column" variants={contentVariant}>
+
+        {/* --- DYNAMICALLY SHOWS LOGIN OR RESET FORM --- */}
+        {authState === 'RESETTING_PASSWORD' ? (
+            <>
+                {/* --- RESET PASSWORD FORM --- */}
+                <motion.h2 variants={itemVariant}>// Reset Password</motion.h2>
+                <motion.p variants={itemVariant}>
+                    Resetting for: <strong>{shortAddress(authForm.identifier)}</strong>
+                </motion.p>
+                <form onSubmit={handleResetPassword} className="auth-form">
+                    <motion.input
+                        variants={itemVariant}
+                        type="password"
+                        placeholder="Enter New Password"
+                        value={authForm.newPassword}
+                        onChange={(e) => setAuthForm({ ...authForm, newPassword: e.target.value })}
+                        required
+                    />
+                    <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
+                        {isLoading ? 'Resetting...' : 'Sign & Reset Password'}
+                    </motion.button>
+                </form>
+                <button
+                    className="forgot-password-link"
+                    onClick={() => setAuthState('LOGGED_OUT')} // Go back to login view
+                >
+                    &larr; Back to Login
+                </button>
+            </>
+        ) : (
+            <>
+                {/* --- RETURNING USER (LOGIN) FORM --- */}
+                <motion.h2 variants={itemVariant}>// Returning User</motion.h2>
+                <motion.p variants={itemVariant}>Authenticate with existing credentials.</motion.p>
+                <form onSubmit={handleLogin} className="auth-form">
+                    <motion.input variants={itemVariant} placeholder="Wallet Address / Username / Email" value={authForm.identifier} onChange={(e) => setAuthForm({ ...authForm, identifier: e.target.value })} />
+                    <motion.input variants={itemVariant} type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
+                    <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
+                        {isLoading ? 'Authenticating...' : 'Login'}
+                    </motion.button>
+                </form>
+
+                {/* --- FORGOT PASSWORD LINK --- */}
+                {authForm.identifier && authForm.identifier.startsWith('0x') && (
+                    <button
+                        className="forgot-password-link"
+                        onClick={() => {
+                            setAuthState('RESETTING_PASSWORD');
+                            setUiMessage("Enter a new password to reset your account.");
+                        }}
+                    >
+                        Forgot Password?
+                    </button>
+                )}
+            </>
+        )}
+    </motion.div>
+
+    {/* --- NEW USER COLUMN --- */}
+    <motion.div className="auth-column" variants={contentVariant}>
+        <motion.h2 variants={itemVariant}>// New User</motion.h2>
+        <motion.p variants={itemVariant}>Connect wallet to register.</motion.p>
+        {authState === 'LOGGED_OUT' && (
+            <motion.button onClick={handleWalletConnect} className="btn btn-secondary" disabled={isLoading} variants={itemVariant}>
+                {isLoading ? 'Connecting...' : 'Connect & Register Wallet'}
+            </motion.button>
+        )}
+        {authState === 'REGISTERING' && (
+            <form onSubmit={handleRegister} className="auth-form">
+                <p className="register-address">Registering: <strong>{shortAddress(registrationAddress)}</strong></p>
+                <motion.input variants={itemVariant} type="password" placeholder="Create Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} required />
+                
+                {/* --- FIX: The duplicate username input has been removed from this section --- */}
+                <motion.input variants={itemVariant} placeholder="Username (Optional)" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} />
+                
+                <motion.input variants={itemVariant} type="email" placeholder="Email (Optional)" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} />
+                <motion.button type="submit" className="btn btn-primary" disabled={isLoading} variants={itemVariant}>
+                    {isLoading ? 'Creating Account...' : 'Create Account'}
+                </motion.button>
+            </form>
+        )}
+        </motion.div>
+        </div>    
                     </motion.div>
                     <Toast message={uiMessage} onClose={uiToastClose} />
                     <PageOverlayLoader show={isLoading} text="Awaiting Blockchain Confirmation..." />

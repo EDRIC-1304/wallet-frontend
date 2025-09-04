@@ -601,3 +601,24 @@ input:disabled {
     color: var(--color-primary);
     text-shadow: 0 0 5px var(--color-primary);
 }
+
+/* Add this to your appln.css file, perhaps after the button styles */
+
+.forgot-password-link {
+    background: none;
+    border: none;
+    color: var(--color-text-dark);
+    cursor: pointer;
+    font-family: var(--font-primary);
+    font-size: 0.9rem;
+    padding: 0;
+    margin-top: 20px;
+    text-align: center;
+    width: 100%;
+    transition: color 0.2s;
+}
+
+.forgot-password-link:hover {
+    color: var(--color-primary);
+    text-decoration: underline;
+}
